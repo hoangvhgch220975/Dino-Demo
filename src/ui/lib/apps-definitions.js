@@ -1,0 +1,45 @@
+import { appsRegistry } from './apps-registry'
+
+export const appSections = [
+  {
+    title: 'Apps',
+    items: [
+      appsRegistry.talk,
+      appsRegistry.files,
+      appsRegistry.activity,
+      appsRegistry.mail,
+      appsRegistry.contact,
+      appsRegistry.calendar,
+      appsRegistry.teamhub,
+      appsRegistry.social,
+      appsRegistry.announcement,
+      appsRegistry.notes,
+      appsRegistry.countdown,
+      appsRegistry.photos,
+      appsRegistry.music,
+      appsRegistry.weather,
+      appsRegistry.maps,
+      appsRegistry.news,
+      appsRegistry.settings,
+      appsRegistry.terminal,
+      appsRegistry.tasks,
+      appsRegistry.camera,
+      appsRegistry.calculator,
+    ],
+  },
+  {
+    title: 'Product',
+    items: [
+      appsRegistry.website,
+      appsRegistry.dino,
+      appsRegistry.ec,
+      appsRegistry.pvcfc,
+      appsRegistry.admin,
+      appsRegistry.dinoEdu,
+      appsRegistry.dinoPay,
+      appsRegistry.dinoShop,
+      appsRegistry.dinoHealth,
+      appsRegistry.dinoDrive,
+    ],
+  },
+]

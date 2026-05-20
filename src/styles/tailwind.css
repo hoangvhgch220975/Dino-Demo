@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .glass-panel {
+    background: rgba(19, 19, 20, 0.4);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .app-icon {
+    width: 46px;
+    height: 46px;
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+
+  .app-icon:hover {
+    transform: scale(1.1);
+    filter: brightness(1.2);
+  }
+
+  .text-shadow {
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+}
