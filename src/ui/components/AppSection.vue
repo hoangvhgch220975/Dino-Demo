@@ -1,42 +1,31 @@
 <template>
   <section class="relative">
-    <SectionHeader :title="title" />
+    <SectionHeader 
+      :title="title" 
+      :is-open="isOpen" 
+      @toggle="isOpen = !isOpen" 
+    />
 
-    <div v-if="!isEditMode" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-x-8 gap-y-10 transition-all duration-500">
-      <AppIconTile
-        v-for="item in visibleItems"
-        :key="item.label"
-        :label="item.label"
-        :icon="item.icon"
-        :gradient="item.gradient"
-        :is-edit-mode="isEditMode"
-        :owner="ownerMap[item.key || item.label]"
-        :draggable="true"
-        @dragstart="onDragStart($event, item)"
-        @dragover.prevent
-        @drop="onDrop($event, item)"
-        @open="$emit('open', $event)"
-        @remove="$emit('remove', { label: $event })"
-        @enable-edit="$emit('enable-edit')"
-      />
-    </div>
-
-    <!-- Nút Show More / Show Less -->
-    <div v-if="items.length > 16" class="flex justify-center mt-8 pb-2">
-      <button
-        type="button"
-        class="btn-press flex items-center gap-1.5 px-5 py-2 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 text-white/80 hover:text-white text-xs font-bold tracking-widest uppercase backdrop-blur-xl shadow-lg transition-all duration-300"
-        @click="isExpanded = !isExpanded"
-      >
-        <span class="material-symbols-outlined text-[16px] transition-transform duration-300" :class="{ 'rotate-180': isExpanded }">
-          keyboard_double_arrow_down
-        </span>
-        <span>{{ isExpanded ? 'Show Less' : `Show More (+${items.length - 16})` }}</span>
-      </button>
-    </div>
-
-    <!-- Background overlay để tắt chế độ edit khi nhấn ra ngoài section -->
-    <div v-if="isEditMode" class="fixed inset-0 -z-10" @click="$emit('disable-edit')"></div>
+    <transition name="expand">
+      <div v-if="isOpen && !isEditMode" class="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-x-12 gap-y-12 transition-all duration-500">
+        <AppIconTile
+          v-for="item in items"
+          :key="item.label"
+          :label="item.label"
+          :icon="item.icon"
+          :gradient="item.gradient"
+          :is-edit-mode="isEditMode"
+          :owner="ownerMap[item.key || item.label]"
+          :draggable="true"
+          @dragstart="onDragStart($event, item)"
+          @dragover.prevent
+          @drop="onDrop($event, item)"
+          @open="$emit('open', $event)"
+          @remove="$emit('remove', { label: $event })"
+          @enable-edit="$emit('enable-edit')"
+        />
+      </div>
+    </transition>
   </section>
 </template>
 
@@ -58,6 +47,7 @@ export default {
     return {
       draggedIndex: null,
       isExpanded: false,
+      isOpen: true,
     }
   },
   computed: {
@@ -87,3 +77,17 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.expand-enter-active, .expand-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  max-height: 1000px;
+  opacity: 1;
+  overflow: hidden;
+}
+.expand-enter-from, .expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+</style>

@@ -1,7 +1,7 @@
 <template>
   <div
-    class="relative flex flex-col items-center gap-2 group cursor-pointer select-none focus:outline-none"
-    :class="{ 'jiggle': isEditMode }"
+    class="relative flex flex-col items-center gap-2 group select-none focus:outline-none"
+    :class="{ 'jiggle cursor-move': isEditMode, 'cursor-grab active:cursor-grabbing': !isEditMode }"
     :draggable="draggable"
     :data-label="label"
     :style="positionStyle"
@@ -25,7 +25,7 @@
       <span class="material-symbols-outlined">close</span>
     </div>
 
-    <div class="app-icon rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="gradient">
+    <div class="app-icon w-[46px] h-[46px] rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="gradient">
       <span class="material-symbols-outlined text-white text-[24px]">{{ icon }}</span>
     </div>
     <span class="text-white font-label-sm text-label-sm text-shadow text-center">{{ label }}</span>

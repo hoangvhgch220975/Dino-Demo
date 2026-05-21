@@ -1,15 +1,23 @@
 <template>
   <div
-    class="absolute pointer-events-auto"
+    ref="root"
+    class="absolute pointer-events-auto group/widget"
     :style="positionStyle"
     :data-widget-id="id"
     @mousedown="onMouseDown"
     @pointerdown.stop="onPointerDown"
     @click.stop
   >
-    <div :class="['rounded-lg px-4 py-2 shadow-lg text-white/80 border border-white/10 backdrop-blur-md flex flex-col gap-2', containerClass]" @dragover.prevent @drop.stop.prevent="onWidgetDrop">
+    <div :class="['rounded-lg px-4 py-2 shadow-lg text-white/80 border border-white/10 backdrop-blur-md flex flex-col gap-2 transition-colors group-hover/widget:border-white/25', containerClass]" @dragover.prevent @drop.stop.prevent="onWidgetDrop">
       <div class="flex items-center justify-between gap-2">
-        <div class="flex items-center gap-3 cursor-grab" @pointerdown.stop="onHeaderPointerDown" @pointerup.stop="onHeaderPointerUp" @pointercancel.stop="onHeaderPointerCancel" @mouseleave.stop="onHeaderPointerCancel">
+        <div
+          class="flex flex-1 items-center gap-3 cursor-pointer rounded-md transition-colors hover:bg-white/5"
+          @click.stop="onHeaderClick"
+          @pointerdown.stop="onHeaderPointerDown"
+          @pointerup.stop="onHeaderPointerUp"
+          @pointercancel.stop="onHeaderPointerCancel"
+          @mouseleave.stop="onHeaderPointerCancel"
+        >
           <div class="w-8 h-8 flex items-center justify-center rounded-md bg-white/6">
             <span class="material-symbols-outlined text-white text-[18px]">folder</span>
           </div>
@@ -21,7 +29,6 @@
           </div>
         </div>
         <div class="flex items-center gap-2">
-          <button class="px-2 py-1 rounded bg-white/4" @click.stop="toggleCollapse">{{ collapsed ? 'Open' : 'Collapse' }}</button>
           <button v-if="isEditMode" class="px-2 py-1 rounded bg-red-600 text-white" @click.stop="$emit('remove', id)">✕</button>
         </div>
       </div>
@@ -71,6 +78,7 @@ export default {
     position: { type: Object, default: null },
     ownerMap: { type: Object, default: () => ({}) },
   },
+  emits: ['remove', 'pointerdown', 'dragstart', 'app-dragstart', 'child-longpress', 'update-content', 'drop-into', 'open', 'enable-edit', 'start-drag', 'remove-from-widget', 'measure'],
   data() {
     return {
       editing: false,
@@ -79,6 +87,7 @@ export default {
       timerId: null,
       dragging: false,
       collapsed: (this.content && typeof this.content.collapsed === 'boolean') ? this.content.collapsed : false,
+      headerLongPressed: false,
     }
   },
   computed: {
@@ -95,10 +104,25 @@ export default {
       return this.isEditMode ? 'bg-white/6' : 'bg-white/5';
     }
   },
+  watch: {
+    items: {
+      handler() {
+        this.$nextTick(() => {
+          this.emitMeasure();
+          window.setTimeout(this.emitMeasure, 80);
+        });
+      },
+      deep: true,
+    },
+    position() {
+      this.$nextTick(this.emitMeasure);
+    },
+  },
   mounted() {
     if (this.type === 'time') {
       this.timerId = setInterval(() => { this.time = this.getTime(); }, 1000);
     }
+    this.$nextTick(this.emitMeasure);
   },
   beforeUnmount() {
     if (this.timerId) clearInterval(this.timerId);
@@ -143,13 +167,27 @@ export default {
     ,toggleCollapse() {
       this.collapsed = !this.collapsed;
       this.$emit('update-content', { id: this.id, content: { collapsed: this.collapsed } });
+      this.$nextTick(() => {
+        this.emitMeasure();
+        window.setTimeout(this.emitMeasure, 80);
+        window.setTimeout(this.emitMeasure, 260);
+      });
+    }
+    ,onHeaderClick() {
+      if (this.editing || this.headerLongPressed) {
+        this.headerLongPressed = false;
+        return;
+      }
+      this.toggleCollapse();
     }
     ,onHeaderPointerDown(e) {
       // start long-press timer for header to enter edit mode and start drag
       if (!e) return;
       this.cancelHeaderLongPress();
       this._headerLongPressEvent = e;
+      this.headerLongPressed = false;
       this._headerLongPressTimer = window.setTimeout(() => {
+        this.headerLongPressed = true;
         // emit enable-edit and start-drag with original event
         this.$emit('enable-edit', this.id);
         this.$emit('start-drag', this._headerLongPressEvent, this.id);
@@ -173,6 +211,16 @@ export default {
     ,onRemoveItem(payload) {
       const lbl = (typeof payload === 'string') ? payload : ((payload && (payload.label || payload.title)) ? (payload.label || payload.title) : payload);
       this.$emit('remove-from-widget', { id: this.id, label: lbl });
+    }
+    ,emitMeasure() {
+      if (!this.$refs.root) return;
+      const rect = this.$refs.root.getBoundingClientRect();
+      this.$emit('measure', {
+        id: this.id,
+        width: Math.ceil(rect.width),
+        height: Math.ceil(rect.height),
+        collapsed: this.collapsed,
+      });
     }
   }
 }

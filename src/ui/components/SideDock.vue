@@ -1,5 +1,6 @@
 <template>
   <nav 
+    data-side-dock="true"
     class="fixed z-50 bg-surface-container-highest/20 backdrop-blur-xl border border-white/10 shadow-2xl transition-all duration-300 flex
            /* Desktop: Side Left */
            lg:left-4 lg:top-1/2 lg:-translate-y-1/2 lg:flex-col lg:px-3 lg:py-6 lg:rounded-2xl lg:gap-[5px]

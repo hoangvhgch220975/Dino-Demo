@@ -2,7 +2,7 @@
   <div :class="rootClass">
     <h2
       :class="[
-        'text-white font-sans tracking-widest uppercase text-[24px] md:text-[30px] font-extrabold drop-shadow-[0_0_14px_rgba(255,255,255,0.42)] transition-all duration-300',
+        'text-white font-sans tracking-widest uppercase text-[24px] md:text-[30px] font-extrabold drop-shadow-[0_0_14px_rgba(255,255,255,0.42)] transition-all duration-300 cursor-grab active:cursor-grabbing hover:drop-shadow-[0_0_18px_rgba(255,255,255,0.62)]',
         positioned ? 'm-0 pointer-events-auto' : 'mb-2.5',
       ]"
       :style="elementStyle('status_greeting')"
@@ -15,7 +15,7 @@
 
     <div
       :class="[
-        'font-sans text-white text-6xl md:text-7xl font-extrabold tracking-tight drop-shadow-[0_0_24px_rgba(255,255,255,0.45)] animate-glow select-none',
+        'font-sans text-white text-6xl md:text-7xl font-extrabold tracking-tight drop-shadow-[0_0_24px_rgba(255,255,255,0.45)] animate-glow select-none cursor-grab active:cursor-grabbing',
         positioned ? 'm-0 pointer-events-auto' : 'mb-2',
       ]"
       :style="elementStyle('status_clock')"
@@ -31,7 +31,7 @@
         data-label="status_date"
         :style="elementStyle('status_date')"
         :class="[
-          'flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl shadow-lg transition-transform hover:scale-102 duration-300',
+          'flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl shadow-lg transition-transform hover:scale-102 hover:border-white/25 hover:bg-white/10 duration-300 cursor-grab active:cursor-grabbing',
           positioned ? 'pointer-events-auto' : '',
         ]"
         @pointerdown.stop="$emit('element-pointerdown', 'status_date', $event)"
@@ -45,7 +45,7 @@
         data-label="status_weather"
         :style="elementStyle('status_weather')"
         :class="[
-          'flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl shadow-lg transition-transform hover:scale-102 duration-300',
+          'flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-xl shadow-lg transition-transform hover:scale-102 hover:border-white/25 hover:bg-white/10 duration-300 cursor-grab active:cursor-grabbing',
           positioned ? 'pointer-events-auto' : '',
         ]"
         @pointerdown.stop="$emit('element-pointerdown', 'status_weather', $event)"

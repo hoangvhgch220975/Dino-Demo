@@ -27,7 +27,14 @@
         </div>
 
         <div v-show="!isEditMode" class="relative" :style="mainElementStyle('searchBar')" :class="{ 'pointer-events-auto z-30': hasPositionedSearchBar }">
-            <div data-label="searchBar" @pointerdown="startElementLongPress('searchBar', $event)" @pointerup="cancelElementLongPress" @pointercancel="cancelElementLongPress" @pointerleave="cancelElementLongPress">
+            <div
+              data-label="searchBar"
+              class="cursor-grab active:cursor-grabbing transition-[filter] hover:drop-shadow-[0_0_14px_rgba(255,255,255,0.22)]"
+              @pointerdown="startElementLongPress('searchBar', $event)"
+              @pointerup="cancelElementLongPress"
+              @pointercancel="cancelElementLongPress"
+              @pointerleave="cancelElementLongPress"
+            >
               <SearchBar v-model="query" />
             </div>
             <div
@@ -296,7 +303,7 @@ export default {
       iconPositions: {},
       // grid settings
       gridEnabled: true,
-      gridSize: 48,
+      gridSize: 24,
       showGrid: true,
       widgets: [],
       widgetPositions: {},
@@ -361,10 +368,10 @@ export default {
       };
     },
     horizontalRulerTicks() {
-      return Array.from({ length: 42 }, (_, i) => i * 48)
+      return Array.from({ length: 84 }, (_, i) => i * 24)
     },
     verticalRulerTicks() {
-      return Array.from({ length: 26 }, (_, i) => i * 48)
+      return Array.from({ length: 52 }, (_, i) => i * 24)
     },
     // Tách riêng apps và products sections
     appSection() {
@@ -495,6 +502,12 @@ export default {
       handler() { this.saveLayout() },
       deep: true,
     },
+    openWindows: {
+      handler() {
+        this.$nextTick(() => this.resolveAllElementOverlaps());
+      },
+      deep: true,
+    },
     '$route.params.appKey': {
       immediate: true,
       handler(appKey) {
@@ -597,6 +610,7 @@ export default {
       this.initDefaultLabels();
       this.snapshotMovableElements();
       this.isEditMode = true;
+      this.$nextTick(() => this.resolveAllElementOverlaps());
     },
     snapshotMovableElements() {
       const root = this.$refs.desktopMain;
@@ -800,7 +814,7 @@ export default {
       if (!desktop) return;
       const rect = desktop.getBoundingClientRect();
       const appId = keyFromLabel(label);
-      const x = this.clampToGrid(event.clientX - rect.left, rect.width - 48);
+      const x = this.clampToGridRange(event.clientX - rect.left, this.getSideDockMinX(desktop), rect.width - 48);
       const y = this.clampToGrid(event.clientY - rect.top, rect.height - 48);
 
       this.placeAppOnDesktop(appId, { x, y });
@@ -822,30 +836,10 @@ export default {
       const rect = overlay.getBoundingClientRect();
       const relX = event.clientX - rect.left;
       const relY = event.clientY - rect.top;
-      const x = this.clampToGrid(relX, rect.width - 48);
+      const x = this.clampToGridRange(relX, this.getSideDockMinX(overlay), rect.width - 48);
       const y = this.clampToGrid(relY, rect.height - 48);
-      // convert label -> appId
       const appId = keyFromLabel(label);
-      // remove from any groups
-      this.widgets.forEach(w => {
-        if (!Array.isArray(w.appIds)) return;
-        const i = w.appIds.indexOf(appId);
-        if (i !== -1) w.appIds.splice(i, 1);
-      });
-      // upsert desktopApps
-      const existing = (this.desktopApps || []).find(d => d.appId === appId);
-      if (existing) {
-        existing.position = { x, y };
-      } else {
-        this.desktopApps = [...this.desktopApps, { appId, position: { x, y } }];
-      }
-      // ensure the app is visible in main UI sections
-      try {
-        this.selectedAppKeys.add(appId);
-        this.selectedAppKeys = new Set(this.selectedAppKeys);
-      } catch (e) { void e; }
-      this.dragPayload = null;
-      this.saveLayout();
+      this.placeAppOnDesktop(appId, { x, y });
       },
       placeAppOnDesktop(appId, position) {
         if (!appId) return;
@@ -867,6 +861,7 @@ export default {
         this.selectedAppKeys = new Set(this.selectedAppKeys);
         this.dragPayload = null;
         this.saveLayout();
+        this.$nextTick(() => this.resolveAllElementOverlaps(appId));
       },
       handleGroupDrop(groupId, event) {
         const label = event.dataTransfer.getData('application/x-app-label') || event.dataTransfer.getData('application/x-app-key') || event.dataTransfer.getData('text/plain') || (window.__dino_drag_payload && window.__dino_drag_payload.label);
@@ -901,6 +896,7 @@ export default {
         const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
         if (!overlay) return;
         const overlayRect = overlay.getBoundingClientRect();
+        const minX = this.getSideDockMinX(overlay);
         const basePos = this.iconPositions[id] || this.widgetPositions[id] || null;
         // find child element to apply transform for smooth dragging
         let childEl = overlay.querySelector(`[data-label="${id}"]`) || overlay.querySelector(`[data-widget-id="${id}"]`);
@@ -947,13 +943,9 @@ export default {
           const cy = ev.clientY || (ev.touches && ev.touches[0].clientY);
           if (cx == null || cy == null) return;
           lastClientX = cx; lastClientY = cy;
-          if (this.gridEnabled) {
-            tx = this.clampToGrid(baseX + cx - startClientX, overlayRect.width - 48) - baseX;
-            ty = this.clampToGrid(baseY + cy - startClientY, overlayRect.height - 48) - baseY;
-          } else {
-            tx = cx - startClientX;
-            ty = cy - startClientY;
-          }
+          const nextX = Math.max(minX, Math.min(overlayRect.width - 48, baseX + cx - startClientX));
+          tx = nextX - baseX;
+          ty = cy - startClientY;
           if (!rafId) rafId = window.requestAnimationFrame(paint);
         };
 
@@ -967,10 +959,10 @@ export default {
           let finalX = baseX + (lastClientX - startClientX);
           let finalY = baseY + (lastClientY - startClientY);
           if (this.gridEnabled) {
-            finalX = this.clampToGrid(finalX, overlayRect.width - 48);
+            finalX = this.clampToGridRange(finalX, minX, overlayRect.width - 48);
             finalY = this.clampToGrid(finalY, overlayRect.height - 48);
           } else {
-            finalX = Math.max(0, Math.min(overlayRect.width - 48, finalX));
+            finalX = Math.max(minX, Math.min(overlayRect.width - 48, finalX));
             finalY = Math.max(0, Math.min(overlayRect.height - 48, finalY));
           }
           if (capturedEl && capturedPointerId && capturedEl.releasePointerCapture) {
@@ -987,6 +979,7 @@ export default {
             this.iconPositions = { ...this.iconPositions, [id]: { x: Math.round(finalX), y: Math.round(finalY) } };
           }
           this.draggingElement = null;
+          this.$nextTick(() => this.resolveAllElementOverlaps(id));
           // persist immediately to localStorage to guarantee save across session
           try {
             const payload = { iconPositions: this.iconPositions, widgetPositions: this.widgetPositions, widgets: this.widgets };
@@ -1080,6 +1073,23 @@ export default {
         const snappedMax = Math.floor(Math.max(0, max) / this.gridSize) * this.gridSize;
         return Math.max(0, Math.min(snappedMax, this.snapToGrid(value)));
       },
+      clampToGridRange(value, min, max) {
+        const snappedMin = Math.ceil(Math.max(0, min) / this.gridSize) * this.gridSize;
+        const snappedMax = Math.floor(Math.max(snappedMin, max) / this.gridSize) * this.gridSize;
+        return Math.max(snappedMin, Math.min(snappedMax, this.snapToGrid(value)));
+      },
+      getSideDockMinX(root) {
+        const desktop = this.$refs.desktopMain;
+        const dock = desktop && desktop.querySelector('[data-side-dock]');
+        if (!root || !dock) return 0;
+
+        const rootRect = root.getBoundingClientRect();
+        const dockRect = dock.getBoundingClientRect();
+        const isSideDock = dockRect.height >= dockRect.width;
+        if (!isSideDock) return 0;
+
+        return this.snapToGrid(dockRect.right - rootRect.left + this.gridSize);
+      },
       normalizeLayoutPositions() {
         const normalizeMap = (positions) => {
           const next = {};
@@ -1141,29 +1151,95 @@ export default {
           ...this.widgetRects,
           [id]: { width, height, collapsed },
         };
-        this.$nextTick(() => this.resolveWidgetOverlaps(id));
+        this.$nextTick(() => {
+          this.collectWidgetRects();
+          this.resolveAllElementOverlaps(id);
+        });
+      },
+      collectWidgetRects() {
+        const root = this.isEditMode ? this.$refs.editOverlay : this.$refs.desktopMain;
+        if (!root) return;
+        const next = { ...this.widgetRects };
+        root.querySelectorAll('[data-widget-id]').forEach((el) => {
+          const id = el.getAttribute('data-widget-id');
+          if (!id) return;
+          const rect = el.getBoundingClientRect();
+          next[id] = {
+            width: Math.ceil(rect.width),
+            height: Math.ceil(rect.height),
+            collapsed: next[id] ? next[id].collapsed : false,
+          };
+        });
+        this.widgetRects = next;
       },
       resolveWidgetOverlaps(changedId) {
+        this.resolveAllElementOverlaps(changedId);
+      },
+      resolveAllElementOverlaps(changedId) {
         if (this.draggingElement) return;
-        const gap = this.gridSize;
-        const overlapPadding = 8;
-        const entries = (this.widgets || [])
-          .map((widget) => {
-            const pos = this.widgetPositions[widget.id];
-            const rect = this.widgetRects[widget.id];
-            if (!pos || !rect) return null;
-            return {
-              id: widget.id,
-              x: pos.x,
-              y: pos.y,
-              width: rect.width,
-              height: rect.height,
-            };
-          })
-          .filter(Boolean)
-          .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+        const root = this.isEditMode ? this.$refs.editOverlay : this.$refs.desktopMain;
+        if (!root) return;
+        const overlapPadding = 0;
 
-        const next = { ...this.widgetPositions };
+        const desktopAppIds = new Set((this.desktopApps || []).map((app) => app.appId));
+        const entries = [];
+        const rootRect = root.getBoundingClientRect();
+
+        const pushEntry = ({ id, type, pos, width, height, priority }) => {
+          if (!id || !pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return;
+          entries.push({
+            id,
+            type,
+            x: pos.x,
+            y: pos.y,
+            width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(width || this.gridSize))),
+            height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(height || this.gridSize))),
+            priority,
+          });
+        };
+
+        const obstacleRoot = this.$refs.desktopMain || root;
+        obstacleRoot.querySelectorAll('[data-side-dock]').forEach((el, index) => {
+          const rect = el.getBoundingClientRect();
+          const dockPadding = this.gridSize;
+          entries.push({
+            id: `sideDock_${index}`,
+            type: 'obstacle',
+            x: this.snapToGrid(rect.left - rootRect.left - dockPadding),
+            y: this.snapToGrid(rect.top - rootRect.top - dockPadding),
+            width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.width + dockPadding * 2))),
+            height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.height + dockPadding * 2))),
+            priority: 0,
+          });
+        });
+
+        root.querySelectorAll('[data-widget-id]').forEach((el) => {
+          const id = el.getAttribute('data-widget-id');
+          const pos = this.widgetPositions[id];
+          const rect = el.getBoundingClientRect();
+          pushEntry({ id, type: 'widget', pos, width: rect.width, height: rect.height, priority: 10 });
+        });
+
+        root.querySelectorAll('[data-label]').forEach((el) => {
+          const id = el.getAttribute('data-label');
+          if (id === 'statusPanel') return;
+          const rect = el.getBoundingClientRect();
+          const appId = keyFromLabel(id);
+          if (desktopAppIds.has(appId)) {
+            const app = this.desktopApps.find((item) => item.appId === appId);
+            pushEntry({ id: appId, type: 'desktopApp', pos: app && app.position, width: rect.width, height: rect.height, priority: 30 });
+            return;
+          }
+          if (this.iconPositions[id]) {
+            pushEntry({ id, type: 'icon', pos: this.iconPositions[id], width: rect.width, height: rect.height, priority: 20 });
+          }
+        });
+
+        entries.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.priority - b.priority));
+
+        const nextWidgetPositions = { ...this.widgetPositions };
+        const nextIconPositions = { ...this.iconPositions };
+        const nextDesktopApps = (this.desktopApps || []).map((app) => ({ ...app, position: app.position ? { ...app.position } : app.position }));
         let changed = false;
 
         const overlaps = (a, b) => {
@@ -1173,25 +1249,83 @@ export default {
             && a.y + a.height + overlapPadding > b.y;
         };
 
+        const findNearestFreePosition = (entry, placed) => {
+          const maxX = Math.floor(Math.max(0, rootRect.width - entry.width) / this.gridSize) * this.gridSize;
+          const maxY = Math.floor(Math.max(0, rootRect.height - entry.height) / this.gridSize) * this.gridSize;
+          const originX = this.clampToGrid(entry.x, maxX);
+          const originY = this.clampToGrid(entry.y, maxY);
+
+          const candidateWorks = (x, y) => {
+            const candidate = { ...entry, x, y };
+            return !placed.some((item) => overlaps(item, candidate));
+          };
+
+          if (candidateWorks(originX, originY)) return { x: originX, y: originY };
+
+          const maxRadius = Math.ceil(Math.max(rootRect.width, rootRect.height) / this.gridSize);
+          for (let radius = 1; radius <= maxRadius; radius += 1) {
+            const candidates = [];
+            for (let dx = -radius; dx <= radius; dx += 1) {
+              candidates.push({ x: originX + dx * this.gridSize, y: originY - radius * this.gridSize });
+              candidates.push({ x: originX + dx * this.gridSize, y: originY + radius * this.gridSize });
+            }
+            for (let dy = -radius + 1; dy <= radius - 1; dy += 1) {
+              candidates.push({ x: originX - radius * this.gridSize, y: originY + dy * this.gridSize });
+              candidates.push({ x: originX + radius * this.gridSize, y: originY + dy * this.gridSize });
+            }
+
+            candidates.sort((a, b) => {
+              const da = Math.abs(a.x - originX) + Math.abs(a.y - originY);
+              const db = Math.abs(b.x - originX) + Math.abs(b.y - originY);
+              return da - db || a.y - b.y || a.x - b.x;
+            });
+
+            const found = candidates.find((candidate) => (
+              candidate.x >= 0
+              && candidate.y >= 0
+              && candidate.x <= maxX
+              && candidate.y <= maxY
+              && candidateWorks(candidate.x, candidate.y)
+            ));
+            if (found) return found;
+          }
+
+          return { x: originX, y: originY };
+        };
+
+        const placed = [];
         for (let i = 0; i < entries.length; i += 1) {
           const current = entries[i];
-          for (let j = i + 1; j < entries.length; j += 1) {
-            const other = entries[j];
-            if (!overlaps(current, other)) continue;
-            const pushedY = this.snapToGrid(current.y + current.height + gap);
-            if (pushedY > other.y) {
-              other.y = pushedY;
-              next[other.id] = { ...next[other.id], y: pushedY };
-              changed = true;
-            }
+          if (current.type === 'obstacle') {
+            placed.push(current);
+            continue;
           }
+          const nextPos = findNearestFreePosition(current, placed);
+          if (nextPos.x !== current.x || nextPos.y !== current.y) {
+            current.x = nextPos.x;
+            current.y = nextPos.y;
+            if (current.type === 'widget') {
+              nextWidgetPositions[current.id] = { ...nextWidgetPositions[current.id], x: nextPos.x, y: nextPos.y };
+            } else if (current.type === 'desktopApp') {
+              const idx = nextDesktopApps.findIndex((app) => app.appId === current.id);
+              if (idx !== -1) {
+                nextDesktopApps[idx].position = { ...nextDesktopApps[idx].position, x: nextPos.x, y: nextPos.y };
+              }
+            } else {
+              nextIconPositions[current.id] = { ...nextIconPositions[current.id], x: nextPos.x, y: nextPos.y };
+            }
+            changed = true;
+          }
+          placed.push(current);
         }
 
         if (changed) {
-          this.widgetPositions = next;
+          this.widgetPositions = nextWidgetPositions;
+          this.iconPositions = nextIconPositions;
+          this.desktopApps = nextDesktopApps;
           this.saveLayout();
           if (changedId) {
-            window.setTimeout(() => this.resolveWidgetOverlaps(), 80);
+            window.setTimeout(() => this.resolveAllElementOverlaps(), 80);
           }
         }
       },
@@ -1321,6 +1455,7 @@ export default {
   mounted() {
     this.loadLayout();
     this.initDefaultLabels();
+    this.$nextTick(() => this.resolveAllElementOverlaps());
   },
 }
 </script>
