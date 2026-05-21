@@ -1487,9 +1487,9 @@ export default {
             childEl.style.willChange = '';
           }
           if (this.widgetPositions[id] !== undefined) {
-            this.widgetPositions = { ...this.widgetPositions, [id]: { x: Math.round(finalX), y: Math.round(finalY) } };
+            this.widgetPositions = { ...this.widgetPositions, [id]: { ...this.widgetPositions[id], x: Math.round(finalX), y: Math.round(finalY) } };
           } else {
-            this.iconPositions = { ...this.iconPositions, [id]: { x: Math.round(finalX), y: Math.round(finalY) } };
+            this.iconPositions = { ...this.iconPositions, [id]: { ...this.iconPositions[id], x: Math.round(finalX), y: Math.round(finalY) } };
           }
           this.draggingElement = null;
           this.$nextTick(() => this.resolveAllElementOverlaps(id));
