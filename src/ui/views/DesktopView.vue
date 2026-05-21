@@ -384,9 +384,54 @@ export default {
       desktopApps: [], // [{ appId: 'countdown', position: { x, y } }]
       // internal cleanup for active pointer drag
       dragCleanup: null,
-      openWindows: [],
+      openWindows: (() => {
+        try {
+          const raw = localStorage.getItem('desktop_open_windows');
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              return list.map(item => {
+                if (!item || !item.key) return null;
+                const base = getAppByKey(item.key);
+                if (!base) return null;
+                return {
+                  ...base,
+                  rect: item.rect,
+                  z: typeof item.z === 'number' ? item.z : 10,
+                  minimized: !!item.minimized,
+                  maximized: item.maximized !== undefined ? !!item.maximized : true,
+                  exiting: false,
+                  motion: { from: null, to: null },
+                };
+              }).filter(Boolean);
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+        return [];
+      })(),
       activeKey: '',
-      zCounter: 10,
+      zCounter: (() => {
+        try {
+          const raw = localStorage.getItem('desktop_open_windows');
+          if (raw) {
+            const list = JSON.parse(raw);
+            if (Array.isArray(list)) {
+              let maxZ = 10;
+              list.forEach(item => {
+                if (item && typeof item.z === 'number' && item.z > maxZ) {
+                  maxZ = item.z;
+                }
+              });
+              return maxZ;
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+        return 10;
+      })(),
       showGroupError: false,
       showAddLabelDialog: false,
       newLabelText: '',
@@ -588,6 +633,7 @@ export default {
       handler() {
         this.$nextTick(() => this.resolveAllElementOverlaps());
         this.updateSelectedAppKeys();
+        this.saveOpenWindows();
       },
       deep: true,
     },
@@ -1352,6 +1398,20 @@ export default {
             desktopApps: this.desktopApps,
           };
           localStorage.setItem('desktop_layout', JSON.stringify(payload));
+        } catch (e) {
+          // ignore
+        }
+      },
+      saveOpenWindows() {
+        try {
+          const list = this.openWindows.map(w => ({
+            key: w.key,
+            rect: w.rect,
+            z: w.z,
+            minimized: w.minimized,
+            maximized: w.maximized,
+          }));
+          localStorage.setItem('desktop_open_windows', JSON.stringify(list));
         } catch (e) {
           // ignore
         }
