@@ -8,7 +8,7 @@
     @pointerdown.stop="onPointerDown"
     @click.stop
   >
-    <div :class="['rounded-lg px-4 py-2 shadow-lg text-white/80 border border-white/10 backdrop-blur-md flex flex-col gap-2 transition-colors group-hover/widget:border-white/25', containerClass]" @dragover.prevent @drop.stop.prevent="onWidgetDrop">
+    <div :class="['rounded-lg px-4 py-2 shadow-lg text-white/80 border border-white/10 backdrop-blur-md flex flex-col gap-2 transition-colors group-hover/widget:border-white/25', containerClass]" style="width: fit-content; min-width: 200px;" @dragover.prevent @drop.stop.prevent="onWidgetDrop">
       <div class="flex items-center justify-between gap-2">
         <div
           class="flex flex-1 items-center gap-3 cursor-pointer rounded-md transition-colors hover:bg-white/5"
@@ -36,7 +36,7 @@
       <transition name="fade">
         <div v-show="!collapsed" class="mt-3">
           <div v-if="type === 'label'">
-            <div v-if="items && items.length" class="grid grid-cols-6 gap-3">
+            <div v-if="items && items.length" class="grid gap-3" style="grid-template-columns: repeat(6, 60px);">
               <AppIconTile
                 v-for="(it, idx) in items"
                 :key="(it && (it.key || it.label)) ? (it.key || it.label) : idx"

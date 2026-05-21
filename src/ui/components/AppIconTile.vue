@@ -1,6 +1,6 @@
 <template>
   <div
-    class="relative flex flex-col items-center gap-2 group select-none focus:outline-none"
+    class="relative flex flex-col items-center gap-1 group select-none focus:outline-none w-[60px]"
     :class="{ 'jiggle cursor-move': isEditMode, 'cursor-grab active:cursor-grabbing': !isEditMode }"
     :draggable="draggable"
     :data-label="label"
@@ -15,20 +15,20 @@
     @click="handleClick"
   >
     <!-- Nút xóa -->
-    <div 
+    <div
       v-if="isEditMode && hovered"
       class="delete-btn"
       @click.stop="$emit('remove', label)"
     >
-    <div v-if="owner" class="owner-badge" :title="owner.name || owner.id"></div>
-    <div v-if="owner" class="owner-tooltip">{{ owner.name || owner.id }}</div>
       <span class="material-symbols-outlined">close</span>
     </div>
+    <div v-if="owner" class="owner-badge" :title="owner.name || owner.id"></div>
+    <div v-if="owner" class="owner-tooltip">{{ owner.name || owner.id }}</div>
 
     <div class="app-icon w-[46px] h-[46px] rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="gradient">
       <span class="material-symbols-outlined text-white text-[24px]">{{ icon }}</span>
     </div>
-    <span class="text-white font-label-sm text-label-sm text-shadow text-center">{{ label }}</span>
+    <span class="text-white text-shadow text-center text-[10px] leading-tight line-clamp-2 break-words w-full">{{ label }}</span>
   </div>
 </template>
 
@@ -57,11 +57,10 @@ export default {
       this.$emit('open', this.label);
     },
     startLongPress(e) {
-      if (this.isEditMode) return; // If already in edit mode don't start
+      if (this.isEditMode) return;
       this.cancelLongPress();
       this._longPressEvent = e || null;
       this.longPressTimer = setTimeout(() => {
-        // emit the event so parent can know which element triggered long-press
         try { this.$emit('enable-edit', this._longPressEvent); } catch (err) { this.$emit('enable-edit'); }
         this.longPressTimer = null;
         this._longPressEvent = null;
@@ -75,14 +74,12 @@ export default {
       }
     },
     onDragStart(event) {
-      // Prevent default long-press cancellation
       this.cancelLongPress();
       try {
         event.dataTransfer.setData('application/x-app-label', this.label);
         event.dataTransfer.setData('text/plain', this.label);
       } catch (e) {
-        // Some environments disallow programmatic dataTransfer (e.g. mobile browsers)
-        // ignore silently
+        // ignore
       }
       this.$emit('dragstart', event);
     },
@@ -93,18 +90,18 @@ export default {
   computed: {
     positionStyle() {
       if (this.position && typeof this.position.x === 'number') {
-          const style = {
-            position: 'absolute',
-            left: `${this.position.x}px`,
-            zIndex: this.isEditMode ? 50 : 20,
-          }
-          if (typeof this.position.y === 'number') {
-            style.top = `${this.position.y}px`
-          } else if (typeof this.position.bottom === 'number') {
-            style.bottom = `${this.position.bottom}px`
-          }
-          return style
+        const style = {
+          position: 'absolute',
+          left: `${this.position.x}px`,
+          zIndex: this.isEditMode ? 50 : 20,
         }
+        if (typeof this.position.y === 'number') {
+          style.top = `${this.position.y}px`
+        } else if (typeof this.position.bottom === 'number') {
+          style.bottom = `${this.position.bottom}px`
+        }
+        return style
+      }
       return {}
     }
   }

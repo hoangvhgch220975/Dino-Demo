@@ -1192,7 +1192,7 @@ export default {
         if (this.draggingElement) return;
         const root = this.isEditMode ? this.$refs.editOverlay : this.$refs.desktopMain;
         if (!root) return;
-        const overlapPadding = 0;
+
 
         const desktopAppIds = new Set((this.desktopApps || []).map((app) => app.appId));
         const entries = [];
@@ -1269,10 +1269,15 @@ export default {
         let changed = false;
 
         const overlaps = (a, b) => {
-          return a.x < b.x + b.width + overlapPadding
-            && a.x + a.width + overlapPadding > b.x
-            && a.y < b.y + b.height + overlapPadding
-            && a.y + a.height + overlapPadding > b.y;
+          const isObstacle = a.type === 'obstacle' || b.type === 'obstacle';
+          const isStatusElement = (id) => ['status_greeting', 'status_clock', 'status_date', 'status_weather'].includes(id);
+          const hasStatus = isStatusElement(a.id) || isStatusElement(b.id);
+
+          const padding = (isObstacle || hasStatus) ? 0 : this.gridSize;
+          return a.x < b.x + b.width + padding
+            && a.x + a.width + padding > b.x
+            && a.y < b.y + b.height + padding
+            && a.y + a.height + padding > b.y;
         };
 
         const findNearestFreePosition = (entry, placed) => {
