@@ -22,6 +22,16 @@
     >
       <span class="material-symbols-outlined">close</span>
     </div>
+
+    <!-- Toggle mode button -->
+    <div
+      v-if="isEditMode && hovered && isEligibleForWidget && !owner"
+      class="widget-toggle-btn"
+      title="Đổi thành Widget"
+      @click.stop="$emit('toggle-mode', appId || label)"
+    >
+      <span class="material-symbols-outlined">widgets</span>
+    </div>
     <div v-if="owner" class="owner-badge" :title="owner.name || owner.id"></div>
     <div v-if="owner" class="owner-tooltip">{{ owner.name || owner.id }}</div>
 
@@ -54,6 +64,7 @@
 export default {
   name: 'AppIconTile',
   props: {
+    appId: { type: String, default: '' },
     label: { type: String, required: true },
     icon: { type: String, required: true },
     gradient: { type: String, default: 'from-slate-600 to-slate-800' },
@@ -66,7 +77,7 @@ export default {
     fallbackLetter: { type: String, default: '' },
     allowIconUpload: { type: Boolean, default: false },
   },
-  emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload'],
+  emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload', 'toggle-mode'],
   data() {
     return {
       longPressTimer: null,
@@ -123,6 +134,10 @@ export default {
     // no-op
   },
   computed: {
+    isEligibleForWidget() {
+      const id = (this.appId || this.label || '').toLowerCase();
+      return ['talk', 'mail', 'file', 'files', 'activity', 'announcement', 'note', 'notes'].includes(id);
+    },
     positionStyle() {
       if (this.position && typeof this.position.x === 'number') {
         const style = {
@@ -176,6 +191,7 @@ export default {
   position: absolute;
   top: -6px;
   right: -6px;
+  left: auto !important;
   width: 16px;
   height: 16px;
   border-radius: 9999px;
@@ -186,9 +202,33 @@ export default {
   box-shadow: 0 6px 12px rgba(0,0,0,0.4);
   color: white;
   font-size: 10px;
+  z-index: 60;
 }
 
 .delete-btn.hidden { display: none; }
+
+.widget-toggle-btn {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  right: auto !important;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14,165,233,0.95);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.4);
+  color: white;
+  font-size: 10px;
+  cursor: pointer;
+  z-index: 60;
+}
+
+.widget-toggle-btn .material-symbols-outlined {
+  font-size: 10px;
+}
 
 .upload-btn {
   position: absolute;

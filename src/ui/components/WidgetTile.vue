@@ -148,6 +148,7 @@ export default {
     },
     onPointerDown(e) {
       if (!this.isEditMode) return;
+      if (e.target.closest('button') || e.target.closest('input')) return;
       this.$emit('pointerdown', e);
     },
     onAppDragStart(ev, it) {

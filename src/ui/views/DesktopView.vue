@@ -201,26 +201,43 @@
           </div>
         </div>
 
-        <AppIconTile
-          v-for="d in desktopIcons"
-          :key="d.key"
-          :label="d.label"
-          :icon="d.icon"
-          :gradient="d.gradient"
-          :icon-image="d.isProduct ? d.productIconUrl : ''"
-          :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
-          :allow-icon-upload="d.isProduct"
-          :is-edit-mode="true"
-          :draggable="true"
-          :position="d.position"
-          :owner="ownerMap[d.appId]"
-          :is-selected="selectedAppIds.has(d.appId)"
-          @dragstart="handleDesktopDragStart"
-          @dragend="handleDesktopDragEnd"
-          @remove="label => removeAppFromSection({ label })"
-          @enable-edit="isEditMode = true"
-          @icon-upload="handleProductIconUpload"
-        />
+        <template v-for="d in desktopIcons" :key="d.key">
+          <AppWidgetTile
+            v-if="d.displayMode === 'widget'"
+            :app-id="d.appId"
+            :label="d.label"
+            :icon="d.icon"
+            :gradient="d.gradient"
+            :is-edit-mode="true"
+            :position="d.position"
+            :is-selected="selectedAppIds.has(d.appId)"
+            :is-dragging="draggingElement === d.appId"
+            @toggle-mode="handleAppToggleMode"
+            @remove="label => removeAppFromSection({ label })"
+            @pointerdown="startPointerDrag(d.appId, $event)"
+          />
+          <AppIconTile
+            v-else
+            :app-id="d.appId"
+            :label="d.label"
+            :icon="d.icon"
+            :gradient="d.gradient"
+            :icon-image="d.isProduct ? d.productIconUrl : ''"
+            :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
+            :allow-icon-upload="d.isProduct"
+            :is-edit-mode="true"
+            :draggable="true"
+            :position="d.position"
+            :owner="ownerMap[d.appId]"
+            :is-selected="selectedAppIds.has(d.appId)"
+            @dragstart="handleDesktopDragStart"
+            @dragend="handleDesktopDragEnd"
+            @remove="label => removeAppFromSection({ label })"
+            @enable-edit="isEditMode = true"
+            @icon-upload="handleProductIconUpload"
+            @toggle-mode="handleAppToggleMode"
+          />
+        </template>
         <WidgetTile
           v-for="w in widgets"
           :key="w.id"
@@ -275,24 +292,38 @@
 
     <!-- Render positioned desktop icons when NOT in edit mode so they remain visible -->
     <div v-if="!isEditMode">
-      <AppIconTile
-        v-for="d in desktopIcons"
-        :key="'desk_'+d.key"
-        :label="d.label"
-        :icon="d.icon"
-        :gradient="d.gradient"
-        :icon-image="d.isProduct ? d.productIconUrl : ''"
-        :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
-        :allow-icon-upload="d.isProduct"
-        :is-edit-mode="false"
-        :draggable="false"
-        :position="d.position"
-        :owner="ownerMap[d.appId]"
-        :is-selected="selectedAppIds.has(d.appId)"
-        @open="openAppByLabel"
-        @enable-edit="enterEditMode"
-        @icon-upload="handleProductIconUpload"
-      />
+      <template v-for="d in desktopIcons" :key="'desk_'+d.key">
+        <AppWidgetTile
+          v-if="d.displayMode === 'widget'"
+          :app-id="d.appId"
+          :label="d.label"
+          :icon="d.icon"
+          :gradient="d.gradient"
+          :is-edit-mode="false"
+          :position="d.position"
+          :is-selected="selectedAppIds.has(d.appId)"
+          @open="openAppByLabel"
+          @enable-edit="enterEditMode"
+        />
+        <AppIconTile
+          v-else
+          :app-id="d.appId"
+          :label="d.label"
+          :icon="d.icon"
+          :gradient="d.gradient"
+          :icon-image="d.isProduct ? d.productIconUrl : ''"
+          :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
+          :allow-icon-upload="d.isProduct"
+          :is-edit-mode="false"
+          :draggable="false"
+          :position="d.position"
+          :owner="ownerMap[d.appId]"
+          :is-selected="selectedAppIds.has(d.appId)"
+          @open="openAppByLabel"
+          @enable-edit="enterEditMode"
+          @icon-upload="handleProductIconUpload"
+        />
+      </template>
     </div>
 
         <!-- Windows Layer (must NOT block desktop icon clicks) -->
@@ -338,6 +369,7 @@ import AppWindow from '../components/AppWindow.vue'
 import SideDock from '../components/SideDock.vue'
 import AppIconTile from '../components/AppIconTile.vue'
 import WidgetTile from '../components/WidgetTile.vue'
+import AppWidgetTile from '../components/AppWidgetTile.vue'
 
 import { appSections } from '../lib/apps-definitions'
 import { routeForApp } from '../lib/routes'
@@ -360,6 +392,7 @@ export default {
     SideDock,
     AppIconTile,
     WidgetTile,
+    AppWidgetTile,
   },
   data() {
     const initialSelected = new Set();
@@ -517,6 +550,7 @@ export default {
             position: a.position,
             isProduct: !!info.isProduct,
             productIconUrl: info.productIconUrl || '',
+            displayMode: a.displayMode || 'icon',
           };
         });
     },
@@ -788,7 +822,11 @@ export default {
                 seen.add(key);
                 return true;
               })
-              .map(d => ({ appId: String(d.appId), position: d.position || { x: 40, y: 80 } }));
+              .map(d => ({
+                appId: String(d.appId),
+                position: d.position || { x: 40, y: 80 },
+                displayMode: d.displayMode || 'icon'
+              }));
           }
           // dedupe and coerce widget appIds, remove falsy values
           this.widgets.forEach(w => {
@@ -1007,6 +1045,19 @@ export default {
         this.minimizeWindow(key)
       } else {
         this.focusWindow(key)
+      }
+    },
+    handleAppToggleMode(appId) {
+      if (!appId) return;
+      const key = keyFromLabel(appId);
+      const app = this.desktopApps.find(a => a.appId === key);
+      if (app) {
+        app.displayMode = app.displayMode === 'widget' ? 'icon' : 'widget';
+        this.desktopApps = [...this.desktopApps];
+        this.saveLayout();
+        this.$nextTick(() => {
+          this.resolveAllElementOverlaps(key);
+        });
       }
     },
     removeAppFromSection({ label }) {
@@ -1351,7 +1402,8 @@ export default {
         if (!overlay) return;
         const overlayRect = overlay.getBoundingClientRect();
         const minX = this.getSideDockMinX(overlay);
-        const basePos = this.iconPositions[id] || this.widgetPositions[id] || null;
+        const desktopApp = (this.desktopApps || []).find(d => d.appId === id);
+        const basePos = (desktopApp ? desktopApp.position : null) || this.iconPositions[id] || this.widgetPositions[id] || null;
         // find child element to apply transform for smooth dragging
         let childEl = overlay.querySelector(`[data-label="${id}"]`) || overlay.querySelector(`[data-widget-id="${id}"]`);
         const startClientX = event.clientX || (event.touches && event.touches[0].clientX);
@@ -1473,17 +1525,31 @@ export default {
             try { capturedEl.releasePointerCapture(capturedPointerId); } catch (e) { /* ignore */ }
           }
           if (childEl) {
-            childEl.style.transform = '';
-            childEl.style.transition = '';
-            childEl.style.willChange = '';
+            childEl.style.transform = 'translate3d(0px, 0px, 0)';
+            childEl.style.transition = 'none';
           }
-          if (this.widgetPositions[id] !== undefined) {
+          const isDesktopApp = (this.desktopApps || []).some(d => d.appId === id);
+          if (isDesktopApp) {
+            this.desktopApps = (this.desktopApps || []).map(d => {
+              if (d.appId === id) {
+                return { ...d, position: { x: Math.round(finalX), y: Math.round(finalY) } };
+              }
+              return d;
+            });
+          } else if (this.widgetPositions[id] !== undefined) {
             this.widgetPositions = { ...this.widgetPositions, [id]: { ...this.widgetPositions[id], x: Math.round(finalX), y: Math.round(finalY) } };
           } else {
             this.iconPositions = { ...this.iconPositions, [id]: { ...this.iconPositions[id], x: Math.round(finalX), y: Math.round(finalY) } };
           }
-          this.draggingElement = null;
-          this.$nextTick(() => this.resolveAllElementOverlaps(id));
+          this.$nextTick(() => {
+            if (childEl) {
+              childEl.style.transform = '';
+              childEl.style.transition = '';
+              childEl.style.willChange = '';
+            }
+            this.draggingElement = null;
+            this.resolveAllElementOverlaps(id);
+          });
           // persist immediately to localStorage to guarantee save across session
           try {
             const payload = {
