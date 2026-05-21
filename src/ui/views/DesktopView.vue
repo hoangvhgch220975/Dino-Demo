@@ -601,12 +601,26 @@ export default {
     },
   },
   methods: {
+    getCleanedIconPositions() {
+      const cleaned = { ...this.iconPositions };
+      if (cleaned.searchBar) {
+        const s = { ...cleaned.searchBar };
+        delete s.width;
+        cleaned.searchBar = s;
+      }
+      return cleaned;
+    },
     loadLayout() {
       try {
         const raw = localStorage.getItem('desktop_layout');
         if (!raw) return;
         const parsed = JSON.parse(raw);
-        if (parsed.iconPositions) this.iconPositions = parsed.iconPositions;
+        if (parsed.iconPositions) {
+          this.iconPositions = parsed.iconPositions;
+          if (this.iconPositions.searchBar) {
+            delete this.iconPositions.searchBar.width;
+          }
+        }
         if (parsed.widgetPositions) this.widgetPositions = parsed.widgetPositions;
         if (parsed.widgets) {
           // ensure compatibility: normalize old widget items -> appIds
@@ -1122,7 +1136,7 @@ export default {
           this.$nextTick(() => this.resolveAllElementOverlaps(id));
           // persist immediately to localStorage to guarantee save across session
           try {
-            const payload = { iconPositions: this.iconPositions, widgetPositions: this.widgetPositions, widgets: this.widgets };
+            const payload = { iconPositions: this.getCleanedIconPositions(), widgetPositions: this.widgetPositions, widgets: this.widgets };
             localStorage.setItem('desktop_layout', JSON.stringify(payload));
           } catch (e) { void e; }
           this.saveLayout();
@@ -1329,7 +1343,7 @@ export default {
       saveLayout() {
         try {
           const payload = {
-            iconPositions: this.iconPositions,
+            iconPositions: this.getCleanedIconPositions(),
             widgetPositions: this.widgetPositions,
             widgets: this.widgets,
             desktopApps: this.desktopApps,
