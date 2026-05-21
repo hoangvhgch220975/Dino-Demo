@@ -477,10 +477,18 @@ export default {
     },
     desktopIcons() {
       // Render only loose desktop apps (from desktopApps array). Groups render their own items.
-      return (this.desktopApps || []).map(a => {
-        const info = this.appsById[a.appId] || { id: a.appId, label: a.appId, icon: 'apps' };
-        return { appId: a.appId, label: info.label || info.name || a.appId, key: a.appId, icon: info.icon, gradient: info.gradient || 'from-slate-600 to-slate-800', position: a.position };
-      });
+      const seen = new Set();
+      return (this.desktopApps || [])
+        .filter(a => {
+          if (!a || !a.appId) return false;
+          if (seen.has(a.appId)) return false;
+          seen.add(a.appId);
+          return true;
+        })
+        .map(a => {
+          const info = this.appsById[a.appId] || { id: a.appId, label: a.appId, icon: 'apps' };
+          return { appId: a.appId, label: info.label || info.name || a.appId, key: a.appId, icon: info.icon, gradient: info.gradient || 'from-slate-600 to-slate-800', position: a.position };
+        });
     },
     gridStyle() {
       return {
@@ -719,9 +727,18 @@ export default {
           // sanitize: build set of appIds inside widgets
           const inGroups = new Set();
           this.widgets.forEach(w => { if (Array.isArray(w.appIds)) w.appIds.forEach(a => { if (a !== null && a !== undefined) inGroups.add(String(a)); }); });
-          // sanitize desktopApps (remove entries that are null or inside groups)
+          // sanitize desktopApps (remove entries that are null, duplicates, or inside groups)
           if (this.desktopApps && Array.isArray(this.desktopApps)) {
-            this.desktopApps = this.desktopApps.filter(d => d && d.appId && !inGroups.has(String(d.appId))).map(d => ({ appId: String(d.appId), position: d.position || { x: 40, y: 80 } }));
+            const seen = new Set();
+            this.desktopApps = this.desktopApps
+              .filter(d => d && d.appId && !inGroups.has(String(d.appId)))
+              .filter(d => {
+                const key = String(d.appId);
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              })
+              .map(d => ({ appId: String(d.appId), position: d.position || { x: 40, y: 80 } }));
           }
           // dedupe and coerce widget appIds, remove falsy values
           this.widgets.forEach(w => {
@@ -1069,8 +1086,14 @@ export default {
             }
           });
 
-          // Trigger update & layout save
-          this.desktopApps = [...this.desktopApps];
+          // Trigger update & layout save with deduplication
+          const seen = new Set();
+          this.desktopApps = (this.desktopApps || []).filter(d => {
+            if (!d || !d.appId) return false;
+            if (seen.has(d.appId)) return false;
+            seen.add(d.appId);
+            return true;
+          });
           this.saveLayout();
           
           // Resolve overlaps
@@ -1217,12 +1240,21 @@ export default {
           w.appIds = w.appIds.filter(a => a !== appId);
         });
 
-        const existing = (this.desktopApps || []).find(d => d.appId === appId);
+        // Deduplicate desktopApps first
+        const seen = new Set();
+        let filtered = (this.desktopApps || []).filter(d => {
+          if (!d || !d.appId) return false;
+          if (seen.has(d.appId)) return false;
+          seen.add(d.appId);
+          return true;
+        });
+
+        const existing = filtered.find(d => d.appId === appId);
         if (existing) {
           existing.position = position;
-          this.desktopApps = [...this.desktopApps];
+          this.desktopApps = filtered;
         } else {
-          this.desktopApps = [...this.desktopApps, { appId, position }];
+          this.desktopApps = [...filtered, { appId, position }];
         }
 
         this.selectedAppKeys.add(appId);
@@ -1738,7 +1770,14 @@ export default {
         if (!root) return;
 
 
-        const desktopAppIds = new Set((this.desktopApps || []).map((app) => app.appId));
+        const seenApps = new Set();
+        const deduplicatedDesktopApps = (this.desktopApps || []).filter(d => {
+          if (!d || !d.appId) return false;
+          if (seenApps.has(d.appId)) return false;
+          seenApps.add(d.appId);
+          return true;
+        });
+        const desktopAppIds = new Set(deduplicatedDesktopApps.map((app) => app.appId));
         const entries = [];
         const rootRect = root.getBoundingClientRect();
 
@@ -1796,7 +1835,7 @@ export default {
           const rect = el.getBoundingClientRect();
           const appId = keyFromLabel(id);
           if (desktopAppIds.has(appId)) {
-            const app = this.desktopApps.find((item) => item.appId === appId);
+            const app = deduplicatedDesktopApps.find((item) => item.appId === appId);
             pushEntry({ id: appId, type: 'desktopApp', pos: app && app.position, width: rect.width, height: rect.height, priority: 30 });
             return;
           }
@@ -1809,7 +1848,7 @@ export default {
 
         const nextWidgetPositions = { ...this.widgetPositions };
         const nextIconPositions = { ...this.iconPositions };
-        const nextDesktopApps = (this.desktopApps || []).map((app) => ({ ...app, position: app.position ? { ...app.position } : app.position }));
+        const nextDesktopApps = deduplicatedDesktopApps.map((app) => ({ ...app, position: app.position ? { ...app.position } : app.position }));
         let changed = false;
 
         const overlaps = (a, b) => {
@@ -1897,7 +1936,13 @@ export default {
         if (changed) {
           this.widgetPositions = nextWidgetPositions;
           this.iconPositions = nextIconPositions;
-          this.desktopApps = nextDesktopApps;
+          const seen = new Set();
+          this.desktopApps = nextDesktopApps.filter(d => {
+            if (!d || !d.appId) return false;
+            if (seen.has(d.appId)) return false;
+            seen.add(d.appId);
+            return true;
+          });
           this.saveLayout();
           if (changedId) {
             window.setTimeout(() => this.resolveAllElementOverlaps(), 80);
