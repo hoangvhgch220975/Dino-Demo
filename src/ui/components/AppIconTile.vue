@@ -25,7 +25,7 @@
     <div v-if="owner" class="owner-badge" :title="owner.name || owner.id"></div>
     <div v-if="owner" class="owner-tooltip">{{ owner.name || owner.id }}</div>
 
-    <div class="app-icon w-[46px] h-[46px] rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="gradient">
+    <div class="app-icon w-[46px] h-[46px] rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="[gradient, isSelected ? 'ring-4 ring-sky-400 ring-offset-2 ring-offset-black/40 scale-105' : '']">
       <span class="material-symbols-outlined text-white text-[24px]">{{ icon }}</span>
     </div>
     <span class="text-white text-shadow text-center text-[10px] leading-tight line-clamp-2 break-words w-full">{{ label }}</span>
@@ -43,6 +43,7 @@ export default {
     draggable: { type: Boolean, default: false },
     position: { type: Object, default: null },
     owner: { type: Object, default: null },
+    isSelected: { type: Boolean, default: false },
   },
   emits: ['open', 'remove', 'enable-edit', 'dragstart'],
   data() {

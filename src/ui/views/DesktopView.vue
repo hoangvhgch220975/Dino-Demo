@@ -14,7 +14,15 @@
         @dragover.prevent
         @dragenter.prevent
         @drop="handleDrop"
+        @pointerdown="handleBackgroundPointerDown"
       >
+        <!-- Selection Box -->
+        <div
+          v-if="isSelecting"
+          class="absolute border-2 border-sky-400 bg-sky-400/20 pointer-events-none rounded-[6px] z-50 shadow-[0_0_12px_rgba(56,189,248,0.3)]"
+          :style="selectionBoxStyle"
+        ></div>
+
         <!-- Error Dialog -->
         <transition name="fade">
           <div v-if="showGroupError" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
@@ -119,9 +127,10 @@
       <div
         ref="editOverlay"
         class="relative w-full h-full min-h-[500px]"
-        @dragover.prevent
+        @dragover.prevent="handleDesktopDragOver"
         @drop="handleDesktopDrop"
         @click="onEditOverlayClick"
+        @pointerdown="handleBackgroundPointerDown"
       >
         <div v-if="showGrid" class="absolute inset-0 pointer-events-none" :style="gridStyle"></div>
         <div v-if="showGrid" class="absolute left-0 right-0 top-0 h-8 pointer-events-none z-40 border-b border-white/15 bg-black/20 backdrop-blur-[2px]">
@@ -201,7 +210,9 @@
           :draggable="true"
           :position="d.position"
           :owner="ownerMap[d.appId]"
+          :is-selected="selectedAppIds.has(d.appId)"
           @dragstart="handleDesktopDragStart"
+          @dragend="handleDesktopDragEnd"
           @remove="label => removeAppFromSection({ label })"
           @enable-edit="isEditMode = true"
         />
@@ -267,6 +278,7 @@
         :draggable="false"
         :position="d.position"
         :owner="ownerMap[d.appId]"
+        :is-selected="selectedAppIds.has(d.appId)"
         @open="openAppByLabel"
         @enable-edit="enterEditMode"
       />
@@ -436,6 +448,12 @@ export default {
       showAddLabelDialog: false,
       newLabelText: '',
       widgetOriginalY: {},
+      isSelecting: false,
+      selectionStart: null,
+      selectionEnd: null,
+      selectedAppIds: new Set(),
+      draggedAppId: null,
+      dragStartPositions: {},
     }
   },
   computed: {
@@ -603,6 +621,19 @@ export default {
         top: `${pos.y}px`,
         zIndex: 60,
         width: pos.width ? `${pos.width}px` : '520px',
+      };
+    },
+    selectionBoxStyle() {
+      if (!this.isSelecting || !this.selectionStart || !this.selectionEnd) return {};
+      const x1 = Math.min(this.selectionStart.x, this.selectionEnd.x);
+      const y1 = Math.min(this.selectionStart.y, this.selectionEnd.y);
+      const x2 = Math.max(this.selectionStart.x, this.selectionEnd.x);
+      const y2 = Math.max(this.selectionStart.y, this.selectionEnd.y);
+      return {
+        left: `${x1}px`,
+        top: `${y1}px`,
+        width: `${x2 - x1}px`,
+        height: `${y2 - y1}px`,
       };
     },
   },
@@ -972,9 +1003,32 @@ export default {
 
     // Dragstart initiated from edit overlay icons
     handleDesktopDragStart(event) {
-      // dataTransfer already set in AppIconTile; keep a transient payload for drop calculations
-      const label = event.dataTransfer.getData('application/x-app-label') || event.dataTransfer.getData('text/plain');
+      const target = event.target ? event.target.closest('[data-label]') : null;
+      const label = target ? target.getAttribute('data-label') : (event.dataTransfer.getData('application/x-app-label') || event.dataTransfer.getData('text/plain'));
       this.dragPayload = { label };
+      try {
+        window.__dino_drag_payload = { label };
+      } catch (e) {
+        // ignore
+      }
+      if (label) {
+        const appId = keyFromLabel(label);
+        this.draggedAppId = appId;
+        this.dragStartPositions = {};
+        (this.desktopApps || []).forEach(d => {
+          if (d.position) {
+            this.dragStartPositions[d.appId] = { ...d.position };
+          }
+        });
+        if (this.selectedAppIds && this.selectedAppIds.has(appId)) {
+          window.__dino_drag_selected_apps = Array.from(this.selectedAppIds);
+        } else {
+          window.__dino_drag_selected_apps = null;
+        }
+      } else {
+        this.draggedAppId = null;
+        window.__dino_drag_selected_apps = null;
+      }
     },
 
     handleDesktopDrop(event) {
@@ -989,7 +1043,171 @@ export default {
       const x = this.clampToGridRange(relX, this.getSideDockMinX(overlay), rect.width - 48);
       const y = this.clampToGrid(relY, rect.height - 48);
       const appId = keyFromLabel(label);
-      this.placeAppOnDesktop(appId, { x, y });
+
+      // Check if dragging multiple apps
+      const appsToMove = (window.__dino_drag_selected_apps && window.__dino_drag_selected_apps.includes(appId))
+        ? window.__dino_drag_selected_apps
+        : [appId];
+
+      if (appsToMove.length > 1) {
+        // Find original position of the primary dragged app
+        const existingDragged = (this.desktopApps || []).find(d => d.appId === appId);
+        const originalDraggedPos = existingDragged ? { ...existingDragged.position } : null;
+
+        if (originalDraggedPos) {
+          const dx = x - originalDraggedPos.x;
+          const dy = y - originalDraggedPos.y;
+
+          appsToMove.forEach(aid => {
+            const otherApp = (this.desktopApps || []).find(d => d.appId === aid);
+            if (otherApp && otherApp.position) {
+              let newX = otherApp.position.x + dx;
+              let newY = otherApp.position.y + dy;
+              newX = this.clampToGridRange(newX, this.getSideDockMinX(overlay), rect.width - 48);
+              newY = this.clampToGrid(newY, rect.height - 48);
+              otherApp.position = { x: newX, y: newY };
+            }
+          });
+
+          // Trigger update & layout save
+          this.desktopApps = [...this.desktopApps];
+          this.saveLayout();
+          
+          // Resolve overlaps
+          appsToMove.forEach(aid => {
+            this.resolveAllElementOverlaps(aid);
+          });
+        } else {
+          // Fallback to single app drop
+          this.placeAppOnDesktop(appId, { x, y });
+        }
+      } else {
+        // Single app drop
+        this.placeAppOnDesktop(appId, { x, y });
+      }
+
+      this.draggedAppId = null;
+      window.__dino_drag_selected_apps = null;
+    },
+
+    handleDesktopDragOver(event) {
+      if (!this.draggedAppId) return;
+      if (event.clientX === 0 && event.clientY === 0) return;
+
+      const overlay = this.$refs.editOverlay;
+      if (!overlay) return;
+      const rect = overlay.getBoundingClientRect();
+      const relX = event.clientX - rect.left;
+      const relY = event.clientY - rect.top;
+      const x = this.clampToGridRange(relX, this.getSideDockMinX(overlay), rect.width - 48);
+      const y = this.clampToGrid(relY, rect.height - 48);
+
+      const appId = this.draggedAppId;
+      const appsToMove = (window.__dino_drag_selected_apps && window.__dino_drag_selected_apps.includes(appId))
+        ? window.__dino_drag_selected_apps
+        : [appId];
+
+      const originalDraggedPos = this.dragStartPositions[appId];
+      if (!originalDraggedPos) return;
+
+      const dx = x - originalDraggedPos.x;
+      const dy = y - originalDraggedPos.y;
+
+      let changed = false;
+      this.desktopApps.forEach(d => {
+        if (appsToMove.includes(d.appId)) {
+          const orig = this.dragStartPositions[d.appId];
+          if (orig) {
+            let newX = orig.x + dx;
+            let newY = orig.y + dy;
+            newX = this.clampToGridRange(newX, this.getSideDockMinX(overlay), rect.width - 48);
+            newY = this.clampToGrid(newY, rect.height - 48);
+            if (!d.position || d.position.x !== newX || d.position.y !== newY) {
+              d.position = { x: newX, y: newY };
+              changed = true;
+            }
+          }
+        }
+      });
+
+      if (changed) {
+        this.desktopApps = [...this.desktopApps];
+      }
+    },
+
+    handleDesktopDragEnd() {
+      if (this.draggedAppId) {
+        // Revert all moved apps to their original positions
+        this.desktopApps.forEach(d => {
+          const orig = this.dragStartPositions[d.appId];
+          if (orig) {
+            d.position = { ...orig };
+          }
+        });
+        this.desktopApps = [...this.desktopApps];
+      }
+      this.draggedAppId = null;
+      this.dragStartPositions = {};
+      window.__dino_drag_selected_apps = null;
+    },
+      handleBackgroundPointerDown(event) {
+        if (event.button && event.button !== 0) return;
+
+        // check if pointer starts on an interactive UI element
+        const isInteractive = event.target.closest('[data-label], [data-widget-id], .pointer-events-auto, button, input, a, [data-side-dock]');
+        if (isInteractive) return;
+
+        this.isSelecting = true;
+        const container = this.$refs.desktopMain;
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        const startX = event.clientX - rect.left;
+        const startY = event.clientY - rect.top;
+
+        this.selectionStart = { x: startX, y: startY };
+        this.selectionEnd = { x: startX, y: startY };
+        this.selectedAppIds = new Set();
+
+        const onPointerMove = (moveEvent) => {
+          if (!this.isSelecting) return;
+          const curX = moveEvent.clientX - rect.left;
+          const curY = moveEvent.clientY - rect.top;
+          this.selectionEnd = { x: curX, y: curY };
+
+          const x1 = Math.min(this.selectionStart.x, this.selectionEnd.x);
+          const y1 = Math.min(this.selectionStart.y, this.selectionEnd.y);
+          const x2 = Math.max(this.selectionStart.x, this.selectionEnd.x);
+          const y2 = Math.max(this.selectionStart.y, this.selectionEnd.y);
+
+          const nextSelected = new Set();
+          (this.desktopIcons || []).forEach(d => {
+            if (!d.position) return;
+            const iconLeft = d.position.x;
+            const iconTop = d.position.y;
+            const iconRight = d.position.x + 60;
+            const iconBottom = d.position.y + 72;
+
+            if (iconLeft < x2 && iconRight > x1 && iconTop < y2 && iconBottom > y1) {
+              nextSelected.add(d.appId);
+            }
+          });
+          this.selectedAppIds = nextSelected;
+        };
+
+        const onPointerUp = () => {
+          this.isSelecting = false;
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+
+          if (this.selectedAppIds.size > 1) {
+            this.enterEditMode();
+          } else {
+            this.selectedAppIds = new Set();
+          }
+        };
+
+        window.addEventListener('pointermove', onPointerMove, { passive: true });
+        window.addEventListener('pointerup', onPointerUp);
       },
       placeAppOnDesktop(appId, position) {
         if (!appId) return;
@@ -1035,6 +1253,7 @@ export default {
         // Close only when clicking the overlay background itself, not its children
         if (event.target === event.currentTarget) {
           this.isEditMode = false;
+          this.selectedAppIds = new Set();
         }
       },
       // Pointer drag support for positioned (non-app) elements and widgets
@@ -1791,28 +2010,45 @@ export default {
           const isAppGroup = w.id === 'label_apps' || (w.content && (w.content.text === 'App' || w.content.label === 'App'));
           const isProductGroup = w.id === 'label_products' || (w.content && (w.content.text === 'Product' || w.content.label === 'Product'));
 
-          if (isAppGroup) {
-            const isApp = this.appSection && this.appSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
-            if (!isApp) {
-              this.showGroupError = true;
-              return;
+          // Check if dragging multiple apps
+          const appsToDrop = (window.__dino_drag_selected_apps && window.__dino_drag_selected_apps.includes(appId))
+            ? window.__dino_drag_selected_apps
+            : [appId];
+
+          const validApps = [];
+          let hasInvalid = false;
+
+          appsToDrop.forEach(aid => {
+            if (isAppGroup) {
+              const isApp = this.appSection && this.appSection.items.some(i => keyFromLabel(i.label || i.title) === aid);
+              if (!isApp) {
+                hasInvalid = true;
+                return;
+              }
             }
-          }
-          if (isProductGroup) {
-            const isProduct = this.productSection && this.productSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
-            if (!isProduct) {
-              this.showGroupError = true;
-              return;
+            if (isProductGroup) {
+              const isProduct = this.productSection && this.productSection.items.some(i => keyFromLabel(i.label || i.title) === aid);
+              if (!isProduct) {
+                hasInvalid = true;
+                return;
+              }
             }
+            validApps.push(aid);
+          });
+
+          if (hasInvalid) {
+            this.showGroupError = true;
           }
 
+          if (validApps.length === 0) return;
+
           // remove from desktopApps
-          this.desktopApps = (this.desktopApps || []).filter(d => d.appId !== appId);
+          this.desktopApps = (this.desktopApps || []).filter(d => !validApps.includes(d.appId));
 
           // remove from other groups
           this.widgets.forEach((other) => {
             if (!Array.isArray(other.appIds)) return;
-            other.appIds = other.appIds.filter(a => a !== appId);
+            other.appIds = other.appIds.filter(a => !validApps.includes(a));
           });
 
           // compute insertion index
@@ -1823,9 +2059,17 @@ export default {
           }
 
           // avoid duplicates
-          if (!w.appIds.includes(appId)) {
-            w.appIds.splice(insertAt, 0, appId);
-          }
+          validApps.forEach(aid => {
+            if (!w.appIds.includes(aid)) {
+              w.appIds.splice(insertAt, 0, aid);
+              insertAt++;
+            }
+          });
+
+          // Clear selection on successful drop
+          this.selectedAppIds = new Set();
+          this.draggedAppId = null;
+          window.__dino_drag_selected_apps = null;
 
           // KEEP selectedAppKeys unchanged: apps remain selected (visible in main UI)
 
