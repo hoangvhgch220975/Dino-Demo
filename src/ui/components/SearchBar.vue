@@ -1,6 +1,9 @@
 <template>
   <div class="flex justify-center w-full mt-6 mb-6">
-    <div class="glass-panel noise-overlay flex items-center gap-4 px-5 h-13 w-full max-w-[520px] rounded-full">
+    <div
+      class="glass-panel noise-overlay flex items-center gap-4 px-5 h-13 rounded-full w-full"
+      :style="{ maxWidth: width ? width + 'px' : '520px' }"
+    >
       <span class="material-symbols-outlined text-[22px] text-on-surface-variant/60">search</span>
       <input
         class="bg-transparent border-none focus:ring-0 text-[15px] text-on-surface-variant placeholder:text-on-surface-variant/40 w-full"
@@ -23,6 +26,10 @@ export default {
     modelValue: {
       type: String,
       default: '',
+    },
+    width: {
+      type: Number,
+      default: null,
     },
   },
   emits: ['update:modelValue'],

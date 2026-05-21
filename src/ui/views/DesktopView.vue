@@ -35,7 +35,7 @@
               @pointercancel="cancelElementLongPress"
               @pointerleave="cancelElementLongPress"
             >
-              <SearchBar v-model="query" />
+              <SearchBar v-model="query" :width="iconPositions.searchBar && iconPositions.searchBar.width || null" />
             </div>
             <div
               v-if="showSearchResults"
@@ -128,8 +128,31 @@
         </div>
         <!-- Positioned clones for each labeled element (movable but not deletable) -->
         <template v-for="(pos, key) in iconPositions" :key="key">
-          <div v-if="elementHtml[key]" :style="posStyle(pos)" class="pointer-events-auto cursor-move" @pointerdown.stop="startPointerDrag(key, $event)" v-html="elementHtml[key]"></div>
+          <!-- searchBar is rendered separately below with resize handle -->
+          <div v-if="elementHtml[key] && key !== 'searchBar'" :style="posStyle(pos)" class="pointer-events-auto cursor-move" @pointerdown.stop="startPointerDrag(key, $event)" v-html="elementHtml[key]"></div>
         </template>
+
+        <!-- Search bar: draggable + resizable in edit mode -->
+        <div
+          v-if="iconPositions.searchBar"
+          :style="searchBarEditStyle"
+          class="pointer-events-auto"
+        >
+          <div
+            class="relative cursor-move"
+            @pointerdown.stop="startPointerDrag('searchBar', $event)"
+          >
+            <SearchBar :width="iconPositions.searchBar.width || null" />
+            <!-- Resize handle at bottom-right -->
+            <div
+              class="absolute bottom-6 right-0 w-7 h-7 flex items-center justify-center rounded-full bg-white/20 border border-white/40 cursor-se-resize text-white hover:bg-white/40 transition-all z-20 shadow-lg"
+              title="Kéo để thay đổi chiều rộng"
+              @pointerdown.stop="startSearchBarResize($event)"
+            >
+              <span class="material-symbols-outlined text-[15px]">drag_handle</span>
+            </div>
+          </div>
+        </div>
 
         <AppIconTile
           v-for="d in desktopIcons"
@@ -484,6 +507,17 @@ export default {
     hasPositionedSearchBar() {
       return !!this.iconPositions.searchBar
     },
+    searchBarEditStyle() {
+      const pos = this.iconPositions.searchBar;
+      if (!pos) return {};
+      return {
+        position: 'absolute',
+        left: `${pos.x}px`,
+        top: `${pos.y}px`,
+        zIndex: 60,
+        width: pos.width ? `${pos.width}px` : '520px',
+      };
+    },
   },
   watch: {
     iconPositions: {
@@ -639,6 +673,10 @@ export default {
             x: this.snapToGrid(rect.left - rootRect.left),
             y: this.snapToGrid(rect.top - rootRect.top),
           };
+        }
+        // For searchBar: capture initial rendered width if not already stored
+        if (id === 'searchBar' && nextPositions[id] && !nextPositions[id].width) {
+          nextPositions[id] = { ...nextPositions[id], width: this.snapToGrid(Math.ceil(rect.width)) };
         }
       });
 
@@ -1025,6 +1063,36 @@ export default {
         // mouse fallback
         window.addEventListener('mouseup', onUp);
       },
+      startSearchBarResize(event) {
+        if (!this.isEditMode) return;
+        event.preventDefault();
+        const startX = event.clientX;
+        const pos = this.iconPositions.searchBar;
+        if (!pos) return;
+        const startWidth = pos.width || 520;
+        const minWidth = 200;
+        const maxWidth = window.innerWidth - 120;
+
+        const onMove = (e) => {
+          const dx = e.clientX - startX;
+          const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + dx));
+          const snapped = Math.round(newWidth / this.gridSize) * this.gridSize;
+          this.iconPositions = {
+            ...this.iconPositions,
+            searchBar: { ...this.iconPositions.searchBar, width: snapped },
+          };
+        };
+
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+          this.saveLayout();
+          this.$nextTick(() => this.resolveAllElementOverlaps('searchBar'));
+        };
+
+        window.addEventListener('pointermove', onMove, { passive: true });
+        window.addEventListener('pointerup', onUp);
+      },
       startElementLongPress(id, event) {
         // begin a long-press; after 800ms enter edit mode and start dragging that element
         // ensure any active drag is cleaned up before starting a new long-press
@@ -1068,11 +1136,15 @@ export default {
       mainElementStyle(id) {
         const pos = this.iconPositions[id];
         if (!pos) return {};
-        return {
+        const style = {
           position: 'absolute',
           left: `${pos.x}px`,
           top: `${pos.y}px`,
         };
+        if (id === 'searchBar' && pos.width) {
+          style.width = `${pos.width}px`;
+        }
+        return style;
       },
       snapToGrid(value) {
         if (!this.gridEnabled) return Math.round(value);
