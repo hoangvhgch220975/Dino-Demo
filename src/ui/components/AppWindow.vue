@@ -100,7 +100,9 @@ export default {
         style.width = `${Math.max(0, window.innerWidth - safeLeft)}px`
         style.height = 'calc(100% - 64px)' // Take up remaining screen space
         style.borderRadius = '0px'
-        style.zIndex = this.z + 100 // sit on top when maximized
+        // Use the provided `z` from parent (which is managed by focusWindow)
+        // Do not apply a fixed +100 offset so a focused/minimized window can be brought above a maximized one.
+        style.zIndex = this.z
       } else {
         style.left = `${this.rect.x}px`
         style.top = `${this.rect.y}px`
