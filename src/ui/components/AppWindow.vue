@@ -19,6 +19,19 @@
       </div>
 
       <div class="flex items-center gap-1">
+        <!-- Open in new tab -->
+        <a 
+          v-if="!isBlank"
+          :href="app.iframeUrl" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          class="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center justify-center cursor-pointer" 
+          aria-label="Open in new tab"
+          @mousedown.stop
+        >
+          <span class="material-symbols-outlined text-white/70 text-[18px]">open_in_new</span>
+        </a>
+
         <button type="button" class="p-2 hover:bg-white/10 rounded-full transition-colors" aria-label="Minimize" @click.stop="$emit('minimize')">
           <span class="material-symbols-outlined text-white/70 text-[20px]">remove</span>
         </button>
