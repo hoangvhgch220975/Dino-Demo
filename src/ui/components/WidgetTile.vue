@@ -45,7 +45,7 @@
                 :gradient="(it && it.gradient) ? it.gradient : 'from-slate-600 to-slate-800'"
                 :is-edit-mode="isEditMode"
                 :owner="ownerMap[(it && (it.key || it.label)) ? (it.key || it.label) : it]"
-                :draggable="true"
+                :draggable="isEditMode"
                 @dragstart.stop="onAppDragStart($event, it)"
                 @enable-edit.stop="onAppLongPressEvent($event, it)"
                 @click.stop="$emit('open', it.label || it)"
@@ -93,9 +93,9 @@ export default {
   computed: {
     positionStyle() {
       if (this.position) {
-          const s = { position: 'absolute', left: `${this.position.x}px` };
-          if (typeof this.position.y === 'number') s.top = `${this.position.y}px`;
-          else if (typeof this.position.bottom === 'number') s.bottom = `${this.position.bottom}px`;
+        const s = { position: 'absolute', left: `${this.position.x}px` };
+        if (typeof this.position.y === 'number') s.top = `${this.position.y}px`;
+        else if (typeof this.position.bottom === 'number') s.bottom = `${this.position.bottom}px`;
         return s;
       }
       return {}
@@ -137,34 +137,36 @@ export default {
     },
     onMouseDown(e) {
       if (!this.isEditMode) return;
-      // start drag via HTML5 drag API is tricky; delegate to parent by emitting event
       this.$emit('dragstart', e, this.id);
-    }
-    ,onPointerDown(e) {
+    },
+    onPointerDown(e) {
       if (!this.isEditMode) return;
       this.$emit('pointerdown', e);
-    }
-    ,onAppDragStart(ev, it) {
-      // bubble up dragstart from inner app icons
+    },
+    onAppDragStart(ev, it) {
+      // Only allow drag from inside a group when in edit mode
+      if (!this.isEditMode) return;
       this.$emit('app-dragstart', ev, { widgetId: this.id, item: it });
-    }
-    ,onAppLongPressEvent(ev, it) {
-      // forward child's long-press to enable edit on this widget (and bubble up)
+    },
+    onAppLongPressEvent(ev, it) {
       this.$emit('enable-edit', this.id);
-      // also provide which item requested edit if parent wants it
       this.$emit('child-longpress', { widgetId: this.id, item: it, event: ev });
-    }
-    ,onItemDrop(targetItem, idx, e) {
+    },
+    onItemDrop(targetItem, idx, e) {
+      // Only allow drops in edit mode
+      if (!this.isEditMode) return;
       const label = e.dataTransfer.getData('application/x-app-label') || e.dataTransfer.getData('text/plain') || (window.__dino_drag_payload && window.__dino_drag_payload.label);
       if (!label) return;
       this.$emit('drop-into', { id: this.id, label, targetLabel: targetItem.label || targetItem, index: idx });
-    }
-    ,onWidgetDrop(e) {
+    },
+    onWidgetDrop(e) {
+      // Only allow drops in edit mode
+      if (!this.isEditMode) return;
       const label = e.dataTransfer.getData('application/x-app-label') || e.dataTransfer.getData('text/plain') || (window.__dino_drag_payload && window.__dino_drag_payload.label);
       if (!label) return;
       this.$emit('drop-into', { id: this.id, label });
-    }
-    ,toggleCollapse() {
+    },
+    toggleCollapse() {
       this.collapsed = !this.collapsed;
       this.$emit('update-content', { id: this.id, content: { collapsed: this.collapsed } });
       this.$nextTick(() => {
@@ -172,47 +174,45 @@ export default {
         window.setTimeout(this.emitMeasure, 80);
         window.setTimeout(this.emitMeasure, 260);
       });
-    }
-    ,onHeaderClick() {
+    },
+    onHeaderClick() {
       if (this.editing || this.headerLongPressed) {
         this.headerLongPressed = false;
         return;
       }
       this.toggleCollapse();
-    }
-    ,onHeaderPointerDown(e) {
-      // start long-press timer for header to enter edit mode and start drag
+    },
+    onHeaderPointerDown(e) {
       if (!e) return;
       this.cancelHeaderLongPress();
       this._headerLongPressEvent = e;
       this.headerLongPressed = false;
       this._headerLongPressTimer = window.setTimeout(() => {
         this.headerLongPressed = true;
-        // emit enable-edit and start-drag with original event
         this.$emit('enable-edit', this.id);
         this.$emit('start-drag', this._headerLongPressEvent, this.id);
         this._headerLongPressTimer = null;
         this._headerLongPressEvent = null;
       }, 700);
-    }
-    ,onHeaderPointerUp() {
+    },
+    onHeaderPointerUp() {
       this.cancelHeaderLongPress();
-    }
-    ,onHeaderPointerCancel() {
+    },
+    onHeaderPointerCancel() {
       this.cancelHeaderLongPress();
-    }
-    ,cancelHeaderLongPress() {
+    },
+    cancelHeaderLongPress() {
       if (this._headerLongPressTimer) {
         clearTimeout(this._headerLongPressTimer);
         this._headerLongPressTimer = null;
         this._headerLongPressEvent = null;
       }
-    }
-    ,onRemoveItem(payload) {
+    },
+    onRemoveItem(payload) {
       const lbl = (typeof payload === 'string') ? payload : ((payload && (payload.label || payload.title)) ? (payload.label || payload.title) : payload);
       this.$emit('remove-from-widget', { id: this.id, label: lbl });
-    }
-    ,emitMeasure() {
+    },
+    emitMeasure() {
       if (!this.$refs.root) return;
       const rect = this.$refs.root.getBoundingClientRect();
       this.$emit('measure', {
@@ -225,3 +225,14 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+  transform: scaleY(0.95);
+  transform-origin: top;
+}
+</style>
