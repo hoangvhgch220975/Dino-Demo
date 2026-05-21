@@ -1,5 +1,5 @@
 <template>
-  <div class="flex justify-center w-full mt-6 mb-6">
+  <div :class="['flex justify-center w-full', floating ? '' : 'mt-6 mb-6']">
     <div
       class="glass-panel noise-overlay flex items-center gap-4 px-5 h-13 rounded-full w-full"
       :style="{ maxWidth: width ? width + 'px' : '520px' }"
@@ -30,6 +30,10 @@ export default {
     width: {
       type: Number,
       default: null,
+    },
+    floating: {
+      type: Boolean,
+      default: false,
     },
   },
   emits: ['update:modelValue'],

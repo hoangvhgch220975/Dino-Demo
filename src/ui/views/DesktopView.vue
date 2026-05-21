@@ -183,6 +183,7 @@
           v-if="iconPositions.searchBar"
           :style="searchBarEditStyle"
           class="pointer-events-auto"
+          data-label="searchBar"
         >
           <div
             class="relative cursor-move"
