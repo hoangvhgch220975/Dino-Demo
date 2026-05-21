@@ -495,16 +495,23 @@ export default {
       deep: true,
     },
     widgets: {
-      handler() { this.saveLayout() },
+      handler() {
+        this.saveLayout();
+        this.updateSelectedAppKeys();
+      },
       deep: true,
     },
     desktopApps: {
-      handler() { this.saveLayout() },
+      handler() {
+        this.saveLayout();
+        this.updateSelectedAppKeys();
+      },
       deep: true,
     },
     openWindows: {
       handler() {
         this.$nextTick(() => this.resolveAllElementOverlaps());
+        this.updateSelectedAppKeys();
       },
       deep: true,
     },
@@ -1442,6 +1449,19 @@ export default {
           const w = this.widgets[idx];
           if (!Array.isArray(w.appIds)) w.appIds = [];
 
+          // Validation: Only allow apps in App group and products in Product group
+          const isAppGroup = w.id === 'label_apps' || (w.content && (w.content.text === 'App' || w.content.label === 'App'));
+          const isProductGroup = w.id === 'label_products' || (w.content && (w.content.text === 'Product' || w.content.label === 'Product'));
+
+          if (isAppGroup) {
+            const isApp = this.appSection && this.appSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
+            if (!isApp) return;
+          }
+          if (isProductGroup) {
+            const isProduct = this.productSection && this.productSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
+            if (!isProduct) return;
+          }
+
           // remove from desktopApps
           this.desktopApps = (this.desktopApps || []).filter(d => d.appId !== appId);
 
@@ -1478,10 +1498,28 @@ export default {
         // persist immediately
         this.saveLayout();
       },
+      updateSelectedAppKeys() {
+        const keys = new Set();
+        (this.desktopApps || []).forEach(d => {
+          if (d && d.appId) keys.add(String(d.appId));
+        });
+        (this.widgets || []).forEach(w => {
+          if (Array.isArray(w.appIds)) {
+            w.appIds.forEach(a => {
+              if (a) keys.add(String(a));
+            });
+          }
+        });
+        (this.openWindows || []).forEach(w => {
+          if (w && w.key) keys.add(String(w.key));
+        });
+        this.selectedAppKeys = keys;
+      },
   },
   mounted() {
     this.loadLayout();
     this.initDefaultLabels();
+    this.updateSelectedAppKeys();
     this.$nextTick(() => this.resolveAllElementOverlaps());
   },
 }
