@@ -85,7 +85,7 @@ export const appsRegistry = {
     title: "Website",
     icon: "language",
     gradient: "from-cyan-500 to-blue-600",
-    iframeUrl: "about:blank",
+    iframeUrl: "https://vsg.top/",
   },
   dino: {
     key: "dino",

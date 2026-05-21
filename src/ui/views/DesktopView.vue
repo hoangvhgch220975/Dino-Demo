@@ -15,6 +15,31 @@
         @dragenter.prevent
         @drop="handleDrop"
       >
+        <!-- Error Dialog -->
+        <transition name="fade">
+          <div v-if="showGroupError" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/40">
+            <div class="glass-panel noise-overlay rounded-[18px] border border-white/10 bg-white/[0.045] shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl px-8 py-6 min-w-[320px] max-w-[90vw] text-center text-white">
+              <div class="text-rose-400 text-lg font-bold mb-2">Không thể di chuyển!</div>
+              <div class="text-white/80 mb-4">Bạn không thể kéo ứng dụng vào nhóm Product hoặc kéo Product vào nhóm App.</div>
+              <button class="mt-2 px-6 py-2 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-500 transition" @click="showGroupError = false">Đóng</button>
+            </div>
+          </div>
+        </transition>
+
+        <!-- Add Label Dialog (custom, replaces native prompt) -->
+        <transition name="fade">
+          <div v-if="showAddLabelDialog" class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40">
+            <div class="glass-panel noise-overlay rounded-[16px] border border-white/10 bg-white/[0.045] shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl w-[min(560px,90vw)] px-6 py-6 text-white">
+              <div class="text-[16px] font-bold text-white mb-2">Thêm nhóm mới</div>
+              <div class="text-sm text-white/80 mb-4">Nhập nội dung label:</div>
+              <input ref="addLabelInput" v-model="newLabelText" class="w-full px-3 py-2 rounded-md bg-white/[0.02] border border-white/8 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-white/10" placeholder="Nhập tên nhóm" />
+              <div class="mt-4 flex justify-end gap-3">
+                <button class="px-4 py-2 rounded-md bg-white/[0.04] hover:bg-white/[0.06] text-white/80" @click="cancelAddLabel">Hủy</button>
+                <button class="px-4 py-2 rounded-md bg-primary text-white font-semibold hover:brightness-95" @click="confirmAddLabel">OK</button>
+              </div>
+            </div>
+          </div>
+        </transition>
         <!-- Global overlay removed to allow drag/drop; edit overlay handles background clicks -->
 
         <div v-show="!isEditMode" data-label="statusPanel">
@@ -259,6 +284,7 @@
             :isExiting="!!w.exiting"
             :motion="w.motion"
             :maximized="!!w.maximized"
+            :safe-area-left="getSideDockMinX($refs.desktopMain)"
             class="pointer-events-auto"
             @focus="focusWindow(w.key)"
             @minimize="minimizeWindow(w.key)"
@@ -361,6 +387,9 @@ export default {
       openWindows: [],
       activeKey: '',
       zCounter: 10,
+      showGroupError: false,
+      showAddLabelDialog: false,
+      newLabelText: '',
     }
   },
   computed: {
@@ -1212,11 +1241,24 @@ export default {
         }));
       },
       promptAddLabel() {
-        const text = window.prompt('Nhập nội dung label:', 'New Label');
-        if (text && text.trim()) {
-          this.addWidget('label', text.trim());
-        }
+          this.newLabelText = 'New Label';
+          this.showAddLabelDialog = true;
+          this.$nextTick(() => {
+            try { if (this.$refs.addLabelInput) this.$refs.addLabelInput.focus(); } catch (e) { /* ignore */ }
+          });
       },
+        confirmAddLabel() {
+          const text = (this.newLabelText || '').trim();
+          this.showAddLabelDialog = false;
+          if (text) {
+            this.addWidget('label', text);
+          }
+          this.newLabelText = '';
+        },
+        cancelAddLabel() {
+          this.showAddLabelDialog = false;
+          this.newLabelText = '';
+        },
       addWidget(type, labelText = '') {
         const id = `w_${Date.now()}`;
         const item = { id, type, content: { text: labelText || (type === 'label' ? 'New Label' : '') } };
@@ -1552,11 +1594,17 @@ export default {
 
           if (isAppGroup) {
             const isApp = this.appSection && this.appSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
-            if (!isApp) return;
+            if (!isApp) {
+              this.showGroupError = true;
+              return;
+            }
           }
           if (isProductGroup) {
             const isProduct = this.productSection && this.productSection.items.some(i => keyFromLabel(i.label || i.title) === appId);
-            if (!isProduct) return;
+            if (!isProduct) {
+              this.showGroupError = true;
+              return;
+            }
           }
 
           // remove from desktopApps

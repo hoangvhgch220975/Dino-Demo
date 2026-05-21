@@ -73,6 +73,7 @@ export default {
       default: () => ({ from: null, to: null }),
     },
     maximized: { type: Boolean, default: false },
+    safeAreaLeft: { type: Number, default: 0 },
   },
   emits: ['focus', 'close', 'minimize', 'move', 'toggle-maximize'],
   data() {
@@ -92,9 +93,11 @@ export default {
       }
 
       if (this.maximized) {
-        style.left = '0px'
+        const safeLeft = (typeof this.safeAreaLeft === 'number' && this.safeAreaLeft > 0 && window.innerWidth >= 1024) ? this.safeAreaLeft : 0;
+        style.left = `${safeLeft}px`
         style.top = '64px' // Place it exactly under the 64px TopNavBar
-        style.width = '100%'
+        // reduce width so it does not sit below side dock
+        style.width = `${Math.max(0, window.innerWidth - safeLeft)}px`
         style.height = 'calc(100% - 64px)' // Take up remaining screen space
         style.borderRadius = '0px'
         style.zIndex = this.z + 100 // sit on top when maximized
