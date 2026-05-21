@@ -1079,8 +1079,14 @@ export default {
         return Math.max(snappedMin, Math.min(snappedMax, this.snapToGrid(value)));
       },
       getSideDockMinX(root) {
+        const isDesktop = window.innerWidth >= 1024;
         const desktop = this.$refs.desktopMain;
         const dock = desktop && desktop.querySelector('[data-side-dock]');
+
+        if (isDesktop) {
+          return 72;
+        }
+
         if (!root || !dock) return 0;
 
         const rootRect = root.getBoundingClientRect();
@@ -1199,19 +1205,32 @@ export default {
         };
 
         const obstacleRoot = this.$refs.desktopMain || root;
-        obstacleRoot.querySelectorAll('[data-side-dock]').forEach((el, index) => {
-          const rect = el.getBoundingClientRect();
-          const dockPadding = this.gridSize;
+        const isDesktop = window.innerWidth >= 1024;
+        if (isDesktop) {
           entries.push({
-            id: `sideDock_${index}`,
+            id: 'sideDock_virtual_obstacle',
             type: 'obstacle',
-            x: this.snapToGrid(rect.left - rootRect.left - dockPadding),
-            y: this.snapToGrid(rect.top - rootRect.top - dockPadding),
-            width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.width + dockPadding * 2))),
-            height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.height + dockPadding * 2))),
+            x: 0,
+            y: 0,
+            width: this.getSideDockMinX(root),
+            height: this.snapToGrid(rootRect.height),
             priority: 0,
           });
-        });
+        } else {
+          obstacleRoot.querySelectorAll('[data-side-dock]').forEach((el, index) => {
+            const rect = el.getBoundingClientRect();
+            const dockPadding = this.gridSize * 4;
+            entries.push({
+              id: `sideDock_${index}`,
+              type: 'obstacle',
+              x: this.snapToGrid(rect.left - rootRect.left - dockPadding),
+              y: this.snapToGrid(rect.top - rootRect.top - dockPadding),
+              width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.width + dockPadding * 2))),
+              height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.height + dockPadding * 2))),
+              priority: 0,
+            });
+          });
+        }
 
         root.querySelectorAll('[data-widget-id]').forEach((el) => {
           const id = el.getAttribute('data-widget-id');
@@ -1330,20 +1349,28 @@ export default {
         }
       },
       removeWidget(id) {
-            // When removing a group/widget, move its apps back to desktopApps to avoid losing them
+            // When removing a group/widget, delete its apps completely from desktop and active state
             const w = this.widgets.find(x => x.id === id);
             if (w && Array.isArray(w.appIds) && w.appIds.length) {
-              const pos = this.widgetPositions[id] || { x: 40, y: 80 };
-              let offset = 0;
               w.appIds.forEach(appId => {
-                const dx = this.snapToGrid(pos.x + (offset % 4) * 96);
-                const dy = this.snapToGrid(pos.y + Math.floor(offset / 4) * 96);
-                const exists = (this.desktopApps || []).some(d => d.appId === appId);
-                if (!exists) this.desktopApps = [...this.desktopApps, { appId, position: { x: dx, y: dy } }];
-                // ensure visible in main UI
-                try { this.selectedAppKeys.add(appId); this.selectedAppKeys = new Set(this.selectedAppKeys); } catch (e) { void e; }
-                offset += 1;
+                // Remove from selectedAppKeys so it goes back to "More Apps" dropdown
+                this.selectedAppKeys.delete(appId);
+                // Remove from desktop positioned apps
+                this.desktopApps = (this.desktopApps || []).filter(d => d.appId !== appId);
+                // Close window if the app is currently open
+                try { this.closeWindow(appId); } catch (e) { void e; }
+                // Remove any custom icon positions
+                const appDef = this.appsById[appId];
+                if (appDef && appDef.label) {
+                  const label = appDef.label;
+                  const p = { ...this.iconPositions };
+                  if (p[label] !== undefined) {
+                    delete p[label];
+                    this.iconPositions = p;
+                  }
+                }
               });
+              this.selectedAppKeys = new Set(this.selectedAppKeys);
             }
             this.widgets = this.widgets.filter(w => w.id !== id);
             const p = { ...this.widgetPositions };
