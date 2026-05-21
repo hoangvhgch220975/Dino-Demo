@@ -123,7 +123,7 @@ export default {
 
       this.dateString = `${dayName}, ${day} ${monthName} ${year}`
 
-      this.greeting = 'Welcome, User'
+      this.greeting = 'Welcome, User👋'
     },
   },
 }

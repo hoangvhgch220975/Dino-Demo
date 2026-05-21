@@ -122,8 +122,20 @@
           </div>
         </div>
         <div class="absolute top-4 right-6 z-50 flex gap-2">
-          <button class="px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500 to-violet-500 text-white font-bold shadow-lg" @click.stop="promptAddLabel">+ Add Label</button>
-          <button class="px-4 py-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold shadow-lg" @click.stop="$refs.wallpaperInput.click()">🌅 Change Wallpaper</button>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-full border border-white/15 bg-white/8 backdrop-blur-md text-white/85 text-[13px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:bg-white/15 hover:border-white/30 hover:text-white transition-all duration-200 active:scale-95"
+            @click.stop="promptAddLabel"
+          >
+            <span class="material-symbols-outlined text-[16px]">create_new_folder</span>
+            Add a Group
+          </button>
+          <button
+            class="flex items-center gap-2 px-4 py-2 rounded-full border border-white/15 bg-white/8 backdrop-blur-md text-white/85 text-[13px] font-semibold shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:bg-white/15 hover:border-white/30 hover:text-white transition-all duration-200 active:scale-95"
+            @click.stop="$refs.wallpaperInput.click()"
+          >
+            <span class="material-symbols-outlined text-[16px]">wallpaper</span>
+            Change Wallpaper
+          </button>
           <input type="file" ref="wallpaperInput" class="hidden" accept="image/*" @change="onWallpaperFileChange" />
         </div>
         <!-- Positioned clones for each labeled element (movable but not deletable) -->
