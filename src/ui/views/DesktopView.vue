@@ -743,13 +743,7 @@ export default {
       this.saveLayout();
     },
     getCleanedIconPositions() {
-      const cleaned = { ...this.iconPositions };
-      if (cleaned.searchBar) {
-        const s = { ...cleaned.searchBar };
-        delete s.width;
-        cleaned.searchBar = s;
-      }
-      return cleaned;
+      return { ...this.iconPositions };
     },
     loadLayout() {
       try {
@@ -758,9 +752,6 @@ export default {
         const parsed = JSON.parse(raw);
         if (parsed.iconPositions) {
           this.iconPositions = parsed.iconPositions;
-          if (this.iconPositions.searchBar) {
-            delete this.iconPositions.searchBar.width;
-          }
         }
         if (parsed.widgetPositions) this.widgetPositions = parsed.widgetPositions;
         if (parsed.widgets) {
