@@ -1632,15 +1632,12 @@ export default {
         return Math.max(snappedMin, Math.min(snappedMax, this.snapToGrid(value)));
       },
       getSideDockMinX(root) {
-        const isDesktop = window.innerWidth >= 1024;
         const desktop = this.$refs.desktopMain;
         const dock = desktop && desktop.querySelector('[data-side-dock]');
 
-        if (isDesktop) {
-          return 72;
+        if (!root || !dock) {
+          return window.innerWidth >= 1024 ? 96 : 0;
         }
-
-        if (!root || !dock) return 0;
 
         const rootRect = root.getBoundingClientRect();
         const dockRect = dock.getBoundingClientRect();

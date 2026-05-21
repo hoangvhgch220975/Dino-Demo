@@ -3,7 +3,7 @@
     data-side-dock="true"
     class="fixed z-50 bg-surface-container-highest/20 backdrop-blur-xl border border-white/10 shadow-2xl transition-all duration-300 flex
            /* Desktop: Side Left */
-           lg:left-4 lg:top-1/2 lg:-translate-y-1/2 lg:flex-col lg:px-3 lg:py-6 lg:rounded-2xl lg:gap-[5px]
+           lg:left-8 lg:top-1/2 lg:-translate-y-1/2 lg:flex-col lg:px-4 lg:py-6 lg:rounded-2xl lg:gap-2
            /* Mobile/Tablet: Bottom Center */
            left-1/2 bottom-4 -translate-x-1/2 flex-row px-4 py-2 rounded-xl max-w-[95vw] overflow-x-auto no-scrollbar gap-[5px]"
     @contextmenu.prevent
@@ -40,13 +40,13 @@
       <div 
         v-if="app.key === activeKey" 
         class="absolute rounded-full bg-secondary shadow-[0_0_8px_rgba(173,198,255,0.8)]
-               lg:-left-1.5 lg:top-1/2 lg:-translate-y-1/2 lg:w-1 lg:h-3
+               lg:-left-2 lg:top-1/2 lg:-translate-y-1/2 lg:w-1 lg:h-3
                bottom-[-6px] left-1/2 -translate-x-1/2 w-3 h-1"
       ></div>
       <div 
         v-else 
         class="absolute rounded-full bg-white/40
-               lg:-left-1.5 lg:top-1/2 lg:-translate-y-1/2 lg:w-1 lg:h-1.5
+               lg:-left-2 lg:top-1/2 lg:-translate-y-1/2 lg:w-1 lg:h-1.5
                bottom-[-6px] left-1/2 -translate-x-1/2 w-1.5 h-1"
       ></div>
     </div>
