@@ -841,10 +841,13 @@ export default {
         this.$router.push(this.activeKey ? `/app/${this.activeKey}` : '/').catch(() => {})
       }
     },
-    moveWindow(key, { x, y }) {
-      const w = this.openWindows.find((t) => t.key === key)
-      if (!w) return
-      w.rect = { ...w.rect, x, y }
+    moveWindow(key, { x, y, w, h }) {
+      const win = this.openWindows.find((t) => t.key === key)
+      if (!win) return
+      const nextRect = { ...win.rect, x, y }
+      if (typeof w === 'number') nextRect.w = w
+      if (typeof h === 'number') nextRect.h = h
+      win.rect = nextRect
     },
     toggleMaximizeWindow(key) {
       const w = this.openWindows.find((x) => x.key === key)

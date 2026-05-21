@@ -53,6 +53,17 @@
         frameborder="0"
       />
     </div>
+
+    <!-- Resize handle at bottom-right corner -->
+    <div
+      v-if="!maximized"
+      class="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize flex items-end justify-end p-0.5 z-50 select-none group/resize"
+      @mousedown.stop.prevent="onResizeStart"
+    >
+      <svg class="w-3.5 h-3.5 text-white/30 group-hover/resize:text-white/60 transition-colors pointer-events-none" viewBox="0 0 10 10" fill="currentColor">
+        <path d="M10,0 L0,10 L10,10 Z" />
+      </svg>
+    </div>
   </div>
 </template>
 
@@ -153,6 +164,35 @@ export default {
         const y = Math.max(64, Math.min(window.innerHeight - 80, startY + dy))
 
         this.$emit('move', { x, y })
+      }
+
+      const onUp = () => {
+        this.isDragging = false
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+      }
+
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    },
+    onResizeStart(e) {
+      if (e.button !== 0) return
+      if (this.maximized) return
+
+      this.isDragging = true
+      const startMouseX = e.clientX
+      const startMouseY = e.clientY
+      const startW = this.rect.w
+      const startH = this.rect.h
+
+      const onMove = (ev) => {
+        const dx = ev.clientX - startMouseX
+        const dy = ev.clientY - startMouseY
+
+        const w = Math.max(320, Math.min(window.innerWidth - this.rect.x - 16, startW + dx))
+        const h = Math.max(240, Math.min(window.innerHeight - this.rect.y - 16, startH + dy))
+
+        this.$emit('move', { x: this.rect.x, y: this.rect.y, w, h })
       }
 
       const onUp = () => {
