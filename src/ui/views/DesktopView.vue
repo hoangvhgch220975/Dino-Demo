@@ -339,7 +339,7 @@ export default {
       // grid settings
       gridEnabled: true,
       gridSize: 24,
-      showGrid: true,
+      showGrid: false,
       widgets: [],
       widgetPositions: {},
       widgetRects: {},
