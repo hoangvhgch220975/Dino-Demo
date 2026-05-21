@@ -43,15 +43,19 @@
                 :label="(it && (it.title || it.label)) ? (it.title || it.label) : it"
                 :icon="(it && it.icon) ? it.icon : 'apps'"
                 :gradient="(it && it.gradient) ? it.gradient : 'from-slate-600 to-slate-800'"
+                :icon-image="isProductGroup ? ((it && it.productIconUrl) || '') : ''"
+                :fallback-letter="isProductGroup ? firstLetter((it && (it.title || it.label)) ? (it.title || it.label) : it) : ''"
+                :allow-icon-upload="isProductGroup"
                 :is-edit-mode="isEditMode"
                 :owner="ownerMap[(it && (it.key || it.label)) ? (it.key || it.label) : it]"
                 :draggable="isEditMode"
                 @dragstart.stop="onAppDragStart($event, it)"
                 @enable-edit.stop="onAppLongPressEvent($event, it)"
-                @click.stop="$emit('open', it.label || it)"
+                @open="$emit('open', $event)"
                 @dragover.prevent
                 @drop.stop.prevent="onItemDrop(it, idx, $event)"
                 @remove="onRemoveItem"
+                @icon-upload="onProductIconUpload"
               />
             </div>
           </div>
@@ -78,7 +82,7 @@ export default {
     position: { type: Object, default: null },
     ownerMap: { type: Object, default: () => ({}) },
   },
-  emits: ['remove', 'pointerdown', 'dragstart', 'app-dragstart', 'child-longpress', 'update-content', 'drop-into', 'open', 'enable-edit', 'start-drag', 'remove-from-widget', 'measure'],
+  emits: ['remove', 'pointerdown', 'dragstart', 'app-dragstart', 'child-longpress', 'update-content', 'drop-into', 'open', 'enable-edit', 'start-drag', 'remove-from-widget', 'measure', 'icon-upload'],
   data() {
     return {
       editing: false,
@@ -102,6 +106,9 @@ export default {
     },
     containerClass() {
       return this.isEditMode ? 'bg-white/6' : 'bg-white/5';
+    },
+    isProductGroup() {
+      return this.id === 'label_products' || (this.content && (this.content.text === 'Product' || this.content.label === 'Product'));
     }
   },
   watch: {
@@ -207,6 +214,12 @@ export default {
     onRemoveItem(payload) {
       const lbl = (typeof payload === 'string') ? payload : ((payload && (payload.label || payload.title)) ? (payload.label || payload.title) : payload);
       this.$emit('remove-from-widget', { id: this.id, label: lbl });
+    },
+    firstLetter(label) {
+      return String(label || '').trim().charAt(0) || '?';
+    },
+    onProductIconUpload(payload) {
+      this.$emit('icon-upload', payload);
     },
     emitMeasure() {
       if (!this.$refs.root) return;

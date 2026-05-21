@@ -188,7 +188,7 @@
             class="relative cursor-move"
             @pointerdown.stop="startPointerDrag('searchBar', $event)"
           >
-            <SearchBar :width="iconPositions.searchBar.width || null" />
+          <SearchBar :width="iconPositions.searchBar.width || null" />
             <!-- Resize handle at bottom-right -->
             <div
               class="absolute bottom-6 right-0 w-7 h-7 flex items-center justify-center rounded-full bg-white/20 border border-white/40 cursor-se-resize text-white hover:bg-white/40 transition-all z-20 shadow-lg"
@@ -206,6 +206,9 @@
           :label="d.label"
           :icon="d.icon"
           :gradient="d.gradient"
+          :icon-image="d.isProduct ? d.productIconUrl : ''"
+          :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
+          :allow-icon-upload="d.isProduct"
           :is-edit-mode="true"
           :draggable="true"
           :position="d.position"
@@ -215,6 +218,7 @@
           @dragend="handleDesktopDragEnd"
           @remove="label => removeAppFromSection({ label })"
           @enable-edit="isEditMode = true"
+          @icon-upload="handleProductIconUpload"
         />
         <WidgetTile
           v-for="w in widgets"
@@ -241,6 +245,7 @@
           @start-drag="(ev, id) => { this.enterEditMode(); this.$nextTick(() => { this.startPointerDrag(id, ev); }); }"
           @remove-from-widget="removeAppFromWidget"
           @measure="onWidgetMeasure"
+          @icon-upload="handleProductIconUpload"
         />
       </div>
     </div>
@@ -263,6 +268,7 @@
         @start-drag="(ev, id) => { this.enterEditMode(); this.$nextTick(() => { this.startPointerDrag(id, ev); }); }"
         @remove-from-widget="removeAppFromWidget"
         @measure="onWidgetMeasure"
+        @icon-upload="handleProductIconUpload"
       />
     </div>
 
@@ -274,6 +280,9 @@
         :label="d.label"
         :icon="d.icon"
         :gradient="d.gradient"
+        :icon-image="d.isProduct ? d.productIconUrl : ''"
+        :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
+        :allow-icon-upload="d.isProduct"
         :is-edit-mode="false"
         :draggable="false"
         :position="d.position"
@@ -281,6 +290,7 @@
         :is-selected="selectedAppIds.has(d.appId)"
         @open="openAppByLabel"
         @enable-edit="enterEditMode"
+        @icon-upload="handleProductIconUpload"
       />
     </div>
 
@@ -308,7 +318,7 @@
 
         <SideDock
           v-if="openWindows.length"
-          :apps="openWindows"
+          :apps="dockApps"
           :active-key="activeKey"
           @open="activateFromDock"
           @close="closeWindow"
@@ -394,6 +404,7 @@ export default {
       elementHtml: {},
       // loose desktop apps (source of truth for apps placed on desktop)
       desktopApps: [], // [{ appId: 'countdown', position: { x, y } }]
+      productIconUrls: {},
       // internal cleanup for active pointer drag
       dragCleanup: null,
       openWindows: (() => {
@@ -462,7 +473,16 @@ export default {
       this.sections.forEach(s => s.items.forEach(i => {
         const lbl = i.label || i.title;
         const key = keyFromLabel(lbl);
-        map[key] = { id: key, name: i.title || lbl, label: lbl, icon: i.icon || 'apps', gradient: i.gradient };
+        const isProduct = s.title === 'Product';
+        map[key] = {
+          id: key,
+          name: i.title || lbl,
+          label: lbl,
+          icon: i.icon || 'apps',
+          gradient: i.gradient,
+          isProduct,
+          productIconUrl: isProduct ? (this.productIconUrls[key] || '') : '',
+        };
       }));
       return map;
     },
@@ -487,7 +507,16 @@ export default {
         })
         .map(a => {
           const info = this.appsById[a.appId] || { id: a.appId, label: a.appId, icon: 'apps' };
-          return { appId: a.appId, label: info.label || info.name || a.appId, key: a.appId, icon: info.icon, gradient: info.gradient || 'from-slate-600 to-slate-800', position: a.position };
+          return {
+            appId: a.appId,
+            label: info.label || info.name || a.appId,
+            key: a.appId,
+            icon: info.icon,
+            gradient: info.gradient || 'from-slate-600 to-slate-800',
+            position: a.position,
+            isProduct: !!info.isProduct,
+            productIconUrl: info.productIconUrl || '',
+          };
         });
     },
     gridStyle() {
@@ -614,6 +643,19 @@ export default {
     visibleWindows() {
       return this.openWindows.filter((w) => !w.minimized || w.exiting)
     },
+    dockApps() {
+      return this.openWindows.map((app) => {
+        const info = this.appsById[app.key] || {};
+        return {
+          ...app,
+          icon: info.icon || app.icon,
+          gradient: info.gradient || app.gradient,
+          isProduct: !!info.isProduct,
+          productIconUrl: info.productIconUrl || '',
+          fallbackLetter: info.isProduct ? this.firstLetter(info.label || app.title || app.key) : '',
+        };
+      });
+    },
     hasPositionedStatusPanel() {
       return ['status_greeting', 'status_clock', 'status_date', 'status_weather'].every((id) => !!this.iconPositions[id])
     },
@@ -668,6 +710,10 @@ export default {
       },
       deep: true,
     },
+    productIconUrls: {
+      handler() { this.saveLayout() },
+      deep: true,
+    },
     openWindows: {
       handler() {
         this.$nextTick(() => this.resolveAllElementOverlaps());
@@ -686,6 +732,15 @@ export default {
     },
   },
   methods: {
+    firstLetter(label) {
+      return String(label || '').trim().charAt(0) || '?';
+    },
+    handleProductIconUpload({ label, dataUrl }) {
+      const appId = keyFromLabel(label);
+      if (!appId || !dataUrl) return;
+      this.productIconUrls = { ...this.productIconUrls, [appId]: dataUrl };
+      this.saveLayout();
+    },
     getCleanedIconPositions() {
       const cleaned = { ...this.iconPositions };
       if (cleaned.searchBar) {
@@ -723,6 +778,9 @@ export default {
         }
           if (parsed.desktopApps && Array.isArray(parsed.desktopApps)) {
             this.desktopApps = parsed.desktopApps;
+          }
+          if (parsed.productIconUrls && typeof parsed.productIconUrls === 'object') {
+            this.productIconUrls = parsed.productIconUrls;
           }
           // sanitize: build set of appIds inside widgets
           const inGroups = new Set();
@@ -1436,7 +1494,13 @@ export default {
           this.$nextTick(() => this.resolveAllElementOverlaps(id));
           // persist immediately to localStorage to guarantee save across session
           try {
-            const payload = { iconPositions: this.getCleanedIconPositions(), widgetPositions: this.widgetPositions, widgets: this.widgets };
+            const payload = {
+              iconPositions: this.getCleanedIconPositions(),
+              widgetPositions: this.widgetPositions,
+              widgets: this.widgets,
+              desktopApps: this.desktopApps,
+              productIconUrls: this.productIconUrls,
+            };
             localStorage.setItem('desktop_layout', JSON.stringify(payload));
           } catch (e) { void e; }
           this.saveLayout();
@@ -1645,10 +1709,11 @@ export default {
           const payload = {
             iconPositions: this.getCleanedIconPositions(),
             widgetPositions: this.widgetPositions,
-            widgets: this.widgets,
-            desktopApps: this.desktopApps,
-          };
-          localStorage.setItem('desktop_layout', JSON.stringify(payload));
+          widgets: this.widgets,
+          desktopApps: this.desktopApps,
+          productIconUrls: this.productIconUrls,
+        };
+        localStorage.setItem('desktop_layout', JSON.stringify(payload));
         } catch (e) {
           // ignore
         }

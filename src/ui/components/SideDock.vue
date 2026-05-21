@@ -31,7 +31,9 @@
         :class="[app.gradient, app.key === activeKey ? 'ring-[3px] ring-white/60 scale-110 brightness-110 shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'opacity-70 hover:opacity-100']"
         @click="$emit('open', app.key)"
       >
-        <span class="material-symbols-outlined text-white text-[22px] lg:text-[26px]">{{ app.icon }}</span>
+        <img v-if="app.productIconUrl" :src="app.productIconUrl" :alt="app.title" class="h-full w-full rounded-xl object-cover" />
+        <span v-else-if="app.fallbackLetter" class="text-white text-[20px] lg:text-[24px] font-extrabold uppercase leading-none">{{ app.fallbackLetter }}</span>
+        <span v-else class="material-symbols-outlined text-white text-[22px] lg:text-[26px]">{{ app.icon }}</span>
       </div>
       
       <!-- Indicator: Chuyển vị trí tùy theo hướng của Dock -->

@@ -26,8 +26,26 @@
     <div v-if="owner" class="owner-tooltip">{{ owner.name || owner.id }}</div>
 
     <div class="app-icon w-[46px] h-[46px] rounded-xl bg-gradient-to-br flex items-center justify-center shadow-lg transition-transform group-hover:scale-110" :class="[gradient, isSelected ? 'ring-4 ring-sky-400 ring-offset-2 ring-offset-black/40 scale-105' : '']">
-      <span class="material-symbols-outlined text-white text-[24px]">{{ icon }}</span>
+      <img v-if="iconImage" :src="iconImage" :alt="label" class="h-full w-full rounded-xl object-cover" />
+      <span v-else-if="fallbackLetter" class="text-white text-[22px] font-extrabold uppercase leading-none">{{ fallbackLetter }}</span>
+      <span v-else class="material-symbols-outlined text-white text-[24px]">{{ icon }}</span>
     </div>
+    <button
+      v-if="allowIconUpload && isEditMode && hovered"
+      class="upload-btn"
+      title="Upload logo"
+      @click.stop="triggerIconUpload"
+    >
+      <span class="material-symbols-outlined">photo_camera</span>
+    </button>
+    <input
+      v-if="allowIconUpload"
+      ref="iconInput"
+      type="file"
+      class="hidden"
+      accept="image/*"
+      @change="onIconFileChange"
+    />
     <span class="text-white text-shadow text-center text-[10px] leading-tight line-clamp-2 break-words w-full">{{ label }}</span>
   </div>
 </template>
@@ -44,8 +62,11 @@ export default {
     position: { type: Object, default: null },
     owner: { type: Object, default: null },
     isSelected: { type: Boolean, default: false },
+    iconImage: { type: String, default: '' },
+    fallbackLetter: { type: String, default: '' },
+    allowIconUpload: { type: Boolean, default: false },
   },
-  emits: ['open', 'remove', 'enable-edit', 'dragstart'],
+  emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload'],
   data() {
     return {
       longPressTimer: null,
@@ -83,6 +104,19 @@ export default {
         // ignore
       }
       this.$emit('dragstart', event);
+    },
+    triggerIconUpload() {
+      if (this.$refs.iconInput) this.$refs.iconInput.click();
+    },
+    onIconFileChange(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.$emit('icon-upload', { label: this.label, dataUrl: e.target.result });
+        event.target.value = '';
+      };
+      reader.readAsDataURL(file);
     },
   },
   mounted() {
@@ -155,4 +189,24 @@ export default {
 }
 
 .delete-btn.hidden { display: none; }
+
+.upload-btn {
+  position: absolute;
+  right: -8px;
+  bottom: 16px;
+  width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(14,165,233,0.95);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.35);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.35);
+}
+
+.upload-btn .material-symbols-outlined {
+  font-size: 12px;
+}
 </style>
