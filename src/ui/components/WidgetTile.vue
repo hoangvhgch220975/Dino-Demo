@@ -153,15 +153,11 @@ export default {
       this.$emit('child-longpress', { widgetId: this.id, item: it, event: ev });
     },
     onItemDrop(targetItem, idx, e) {
-      // Only allow drops in edit mode
-      if (!this.isEditMode) return;
       const label = e.dataTransfer.getData('application/x-app-label') || e.dataTransfer.getData('text/plain') || (window.__dino_drag_payload && window.__dino_drag_payload.label);
       if (!label) return;
       this.$emit('drop-into', { id: this.id, label, targetLabel: targetItem.label || targetItem, index: idx });
     },
     onWidgetDrop(e) {
-      // Only allow drops in edit mode
-      if (!this.isEditMode) return;
       const label = e.dataTransfer.getData('application/x-app-label') || e.dataTransfer.getData('text/plain') || (window.__dino_drag_payload && window.__dino_drag_payload.label);
       if (!label) return;
       this.$emit('drop-into', { id: this.id, label });

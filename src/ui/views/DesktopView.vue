@@ -849,8 +849,6 @@ export default {
 
     handleDrop(event) {
       event.preventDefault();
-      // Only allow drops onto desktop in edit mode
-      if (!this.isEditMode) return;
       const label = event.dataTransfer.getData('application/x-app-key')
         || event.dataTransfer.getData('application/x-app-label')
         || event.dataTransfer.getData('text/plain')
