@@ -1,6 +1,29 @@
 // Central registry for apps in the "desktop OS" UI.
 // Later you can replace iframeUrl with real app URLs (per-app API/FE endpoint).
 
+/*
+  ========================================================================
+  TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (LẤY DANH SÁCH APP VÀ ENDPOINT TỪ BE)
+  ========================================================================
+  Hiện tại danh sách các Apps/Products và endpoint (iframeUrl) đang được định nghĩa tĩnh (mockdata).
+  Khi tích hợp hệ thống Cloud cũ nội bộ của bạn:
+  
+  1. API Backend cần cung cấp endpoint trả về danh sách các app được cấu hình và phân quyền cho User:
+     GET https://api.dinocloud.internal/v1/apps
+     Trả về một mảng chứa thông tin: key, title, icon, gradient, và iframeUrl thật của ứng dụng đó.
+     
+  2. Mỗi App/Product sau này sẽ là THẬT được host độc lập (Micro-Frontends hoặc các app riêng lẻ),
+     ví dụ:
+     - talk: iframeUrl: "https://talk.dinocloud.internal/"
+     - mail: iframeUrl: "https://mail.dinocloud.internal/"
+     - dinoPay: iframeUrl: "https://pay.dinocloud.internal/"
+     - dinoShop: iframeUrl: "https://shop.dinocloud.internal/"
+
+  3. Frontend sẽ thực hiện gọi API này trong mounted() của DesktopView và map động vào registry
+     thay vì dùng danh sách export tĩnh dưới đây.
+  ========================================================================
+*/
+
 export const appsRegistry = {
   talk: {
     key: "talk",

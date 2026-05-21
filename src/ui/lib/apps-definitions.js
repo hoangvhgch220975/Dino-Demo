@@ -1,5 +1,16 @@
 import { appsRegistry } from './apps-registry'
 
+/*
+  ========================================================================
+  TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (PHÂN PHÂN BỔ APP/PRODUCT THEO ROLE TỪ BE)
+  ========================================================================
+  Thay vì chia phần Apps và Products cứng ở đây:
+  Sau này khi kết nối BE, cấu trúc phân quyền (Role-based access) của user đăng nhập
+  sẽ quyết định User được thấy những App và Product nào. Dữ liệu này sẽ được fetch từ BE
+  và map động vào hai danh sách để hiển thị trên Desktop hoặc Menu More.
+  ========================================================================
+*/
+
 export const appSections = [
   {
     title: 'Apps',

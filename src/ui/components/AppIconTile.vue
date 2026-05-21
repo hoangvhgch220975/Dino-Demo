@@ -122,6 +122,28 @@ export default {
     onIconFileChange(event) {
       const file = event.target.files && event.target.files[0];
       if (!file) return;
+      
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (UPLOAD ẢNH LÊN CLOUD CỦA BE)
+        ========================================================================
+        Khi người dùng upload logo/icon cho Product, thay vì đọc dưới dạng DataURL local:
+        1. Khởi tạo một đối tượng FormData và đưa file vào:
+           const formData = new FormData();
+           formData.append('image', file);
+
+        2. Gửi request POST lên API Cloud Storage của BE:
+           const response = await fetch('https://api.dinocloud.internal/v1/storage/upload', {
+             method: 'POST',
+             headers: { 'Authorization': `Bearer ${token}` },
+             body: formData
+           });
+           const data = await response.json(); // Nhận về URL ảnh thật trên Cloud BE (ví dụ: data.url)
+
+        3. Emit URL này lên component cha (DesktopView) để hiển thị và lưu đường dẫn vào DB:
+           this.$emit('icon-upload', { label: this.label, dataUrl: data.url });
+        ========================================================================
+      */
       const reader = new FileReader();
       reader.onload = (e) => {
         this.$emit('icon-upload', { label: this.label, dataUrl: e.target.result });

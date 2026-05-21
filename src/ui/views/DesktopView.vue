@@ -4,6 +4,7 @@
       <WallpaperBackground :src="currentWallpaper" />
       <TopNavBar 
         @open-app="openAppByKey($event, { syncRoute: true })" 
+        @open-help="showHelpDialog = true"
         :has-more="moreApps.length > 0"
         :more-apps-grouped="moreAppsGrouped"
       />
@@ -48,6 +49,8 @@
             </div>
           </div>
         </transition>
+        <!-- Help Dialog -->
+        <HelpDialog v-if="showHelpDialog" @close="showHelpDialog = false" />
         <!-- Global overlay removed to allow drag/drop; edit overlay handles background clicks -->
 
         <div v-show="!isEditMode" data-label="statusPanel">
@@ -370,6 +373,7 @@ import SideDock from '../components/SideDock.vue'
 import AppIconTile from '../components/AppIconTile.vue'
 import WidgetTile from '../components/WidgetTile.vue'
 import AppWidgetTile from '../components/AppWidgetTile.vue'
+import HelpDialog from '../components/HelpDialog.vue'
 
 import { appSections } from '../lib/apps-definitions'
 import { routeForApp } from '../lib/routes'
@@ -393,6 +397,7 @@ export default {
     AppIconTile,
     WidgetTile,
     AppWidgetTile,
+    HelpDialog,
   },
   data() {
     const initialSelected = new Set();
@@ -405,6 +410,7 @@ export default {
     });
 
     return {
+      showHelpDialog: false,
       currentWallpaper: localStorage.getItem('desktop_wallpaper') || undefined,
       query: '',
       isEditMode: false,
@@ -773,6 +779,18 @@ export default {
     handleProductIconUpload({ label, dataUrl }) {
       const appId = keyFromLabel(label);
       if (!appId || !dataUrl) return;
+      
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (UPLOAD ICON PRODUCT LÊN CLOUD BE)
+        ========================================================================
+        Khi cập nhật logo/icon sản phẩm:
+        - Upload file ảnh lên Cloud Storage của BE nhận URL thật như đã cmt ở AppIconTile.vue.
+        - Gọi API lưu đường dẫn icon sản phẩm đã cập nhật vào DB sản phẩm:
+          POST https://api.dinocloud.internal/v1/products/update-icon
+          Body: { productKey: appId, iconUrl: dataUrl }
+        ========================================================================
+      */
       this.productIconUrls = { ...this.productIconUrls, [appId]: dataUrl };
       this.saveLayout();
     },
@@ -780,6 +798,25 @@ export default {
       return { ...this.iconPositions };
     },
     loadLayout() {
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (TẢI CONFIG CÁ NHÂN HÓA TỪ DB)
+        ========================================================================
+        Thay vì chỉ đọc dữ liệu layout từ localStorage:
+        
+        1. Gọi API lấy cấu hình giao diện đã lưu của tài khoản đăng nhập hiện tại từ DB:
+           const response = await fetch('https://api.dinocloud.internal/v1/user/desktop-layout', {
+             headers: { 'Authorization': `Bearer ${token}` }
+           });
+           const parsed = await response.json();
+           
+        2. Gán các thông tin cấu hình này vào state để hiển thị giao diện cá nhân hóa của chính User đó:
+           - Vị trí icons (`parsed.iconPositions`)
+           - Vị trí widgets (`parsed.widgetPositions`)
+           - Danh sách Widgets nhóm (`parsed.widgets`)
+           - App hiển thị ngoài desktop (`parsed.desktopApps`)
+        ========================================================================
+      */
       try {
         const raw = localStorage.getItem('desktop_layout');
         if (!raw) return;
@@ -1374,6 +1411,24 @@ export default {
       onWallpaperFileChange(event) {
       const file = event.target.files[0];
       if (!file) return;
+
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (LƯU HÌNH NỀN WALLPAPER LÊN CLOUD BE)
+        ========================================================================
+        1. Khởi tạo FormData đưa file ảnh wallpaper vào.
+        2. Gửi request POST lên Cloud Storage của BE để lưu file ảnh:
+           const response = await fetch('https://api.dinocloud.internal/v1/storage/upload', { ... });
+           const data = await response.json(); // Nhận về data.url là URL của ảnh
+        
+        3. Lưu URL hình nền mới này vào cấu hình cá nhân hóa trong DB:
+           await fetch('https://api.dinocloud.internal/v1/user/config/wallpaper', {
+             method: 'PUT',
+             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+             body: JSON.stringify({ wallpaperUrl: data.url })
+           });
+        ========================================================================
+      */
       const reader = new FileReader();
       reader.onload = (e) => {
         const url = e.target.result;
@@ -1760,6 +1815,20 @@ export default {
         });
       },
       saveLayout() {
+        /*
+          ========================================================================
+          TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (LƯU CONFIG CÁ NHÂN HÓA VÀO DB)
+          ========================================================================
+          Mỗi khi người dùng di chuyển icon, thay đổi kích thước searchBar, thêm bớt widgets,
+          hoặc upload logo, thay vì chỉ lưu local, ta sẽ đồng bộ lên DB qua API cá nhân hóa:
+          
+          await fetch('https://api.dinocloud.internal/v1/user/desktop-layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(payload)
+          });
+          ========================================================================
+        */
         try {
           const payload = {
             iconPositions: this.getCleanedIconPositions(),
@@ -1774,6 +1843,20 @@ export default {
         }
       },
       saveOpenWindows() {
+        /*
+          ========================================================================
+          TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (LƯU TRẠNG THÁI CỬA SỔ ĐANG MỞ VÀO DB)
+          ========================================================================
+          Để lưu lại trạng thái phiên làm việc (các cửa sổ đang mở, kích thước, vị trí tọa độ của chúng),
+          giúp người dùng đăng nhập lại trên thiết bị khác vẫn khôi phục chính xác trạng thái:
+          
+          await fetch('https://api.dinocloud.internal/v1/user/session-windows', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify(list)
+          });
+          ========================================================================
+        */
         try {
           const list = this.openWindows.map(w => ({
             key: w.key,

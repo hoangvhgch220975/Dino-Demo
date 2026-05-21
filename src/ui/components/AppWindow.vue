@@ -33,6 +33,24 @@
 
     <!-- Content -->
     <div class="bg-black/20" :style="{ height: `calc(100% - 44px)` }">
+      <!--
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (TẢI IFRAME URL THẬT TỪ BE ENDPOINT)
+        ========================================================================
+        Hiện tại các app có iframeUrl === 'about:blank' sẽ hiển thị màn hình trống "Feature coming soon".
+        Khi làm lại cho hệ thống cũ nội bộ:
+        
+        1. Mỗi app/product có một endpoint (URL riêng) được host độc lập trên máy chủ:
+           Ví dụ: https://files.dinocloud.internal hoặc https://analytics.dinocloud.internal
+        
+        2. Khi khởi tạo cửa sổ, Frontend sẽ lấy iframeUrl động từ danh sách đã fetch từ BE.
+           Nếu cần sinh Token Single Sign-On (SSO) tự động để người dùng tự động đăng nhập vào các app con:
+           - FE có thể gọi API BE để lấy URL đăng nhập một lần (SSO URL), ví dụ:
+             GET https://api.dinocloud.internal/v1/auth/sso-url?app=files
+             => Trả về: "https://files.dinocloud.internal/auth?token=sso_one_time_token_xyz"
+           - Gán URL này vào thuộc tính `src` của iframe bên dưới để đăng nhập tự động.
+        ========================================================================
+      -->
       <div v-if="isBlank" class="w-full h-full flex items-center justify-center p-8">
         <div class="max-w-md text-center">
           <div class="mx-auto w-14 h-14 rounded-2xl bg-gradient-to-br flex items-center justify-center shadow-lg" :class="app.gradient">

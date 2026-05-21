@@ -35,6 +35,27 @@
 
       <transition name="fade">
         <div v-show="!collapsed" class="mt-3">
+          <!--
+            ========================================================================
+            TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (DỮ LIỆU WIDGET THẬT LẤY TỪ BE)
+            ========================================================================
+            Hiện tại các Widget như Nhãn nhóm (label), Thời gian (time), Tìm kiếm (search) đang
+            chạy bằng dữ liệu tĩnh/local state.
+            Khi tích hợp hệ thống Cloud cũ nội bộ:
+            
+            1. Widget Nhãn Nhóm (label):
+               - Tải danh sách các ứng dụng con (`items` hay `appIds`) thuộc nhóm này từ DB của user.
+               - Khi kéo thả thêm/bớt app vào nhóm, gọi API cập nhật cấu trúc nhóm lên DB:
+                 POST https://api.dinocloud.internal/v1/widgets/update-items
+                 Body: { widgetId: this.id, appIds: this.appIds }
+            
+            2. Các loại Widgets phức tạp hơn (ví dụ: Task Widget, Mail Widget, Activity Widget):
+               - Mỗi widget sẽ tự động gửi request lấy dữ liệu động của chính nó:
+                 GET https://api.dinocloud.internal/v1/widgets/data?type=activity
+               - Hiển thị danh sách hoạt động, email mới hoặc công việc cần làm trực tiếp trong widget
+                 thay vì hiển thị icon đơn thuần.
+            ========================================================================
+          -->
           <div v-if="type === 'label'">
             <div v-if="items && items.length" class="grid gap-3" style="grid-template-columns: repeat(6, 60px);">
               <AppIconTile

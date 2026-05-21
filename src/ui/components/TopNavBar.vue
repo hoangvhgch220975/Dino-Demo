@@ -40,7 +40,7 @@
             </button>
             <button 
               class="flex items-center gap-3 px-3 py-2.5 text-white/80 hover:text-white text-[13px] font-medium hover:bg-white/5 rounded-[10px] transition-colors text-left"
-              @click="showComingSoon"
+              @click="handleLogout"
             >
               <span class="material-symbols-outlined text-[18px]">logout</span>
               Logout
@@ -135,7 +135,7 @@ export default {
       default: null,
     },
   },
-  emits: ['open-app'],
+  emits: ['open-app', 'open-help'],
   data() {
     const baseButtons = [
       { icon: 'language', label: 'Language', sizeClass: 'text-[20px]' },
@@ -169,6 +169,8 @@ export default {
       } else if (btn.icon === 'more_horiz') {
         this.isMoreMenuOpen = !this.isMoreMenuOpen;
         this.isProfileMenuOpen = false;
+      } else if (btn.icon === 'help_outline') {
+        this.$emit('open-help');
       } else {
         this.showComingSoon();
       }
@@ -197,6 +199,32 @@ export default {
     closeAllMenus() {
       this.isProfileMenuOpen = false;
       this.isMoreMenuOpen = false;
+    },
+    handleLogout() {
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (ĐĂNG XUẤT HỆ THỐNG)
+        ========================================================================
+        Khi người dùng nhấn đăng xuất:
+        
+        1. Gửi yêu cầu đăng xuất tới API BE để hủy token session trên máy chủ:
+           await fetch('https://api.dinocloud.internal/v1/auth/logout', {
+             method: 'POST',
+             headers: { 'Authorization': `Bearer ${token}` }
+           });
+           
+        2. Xóa các Token và thông tin lưu trữ cá nhân hóa cục bộ:
+           localStorage.removeItem('auth_token');
+           localStorage.removeItem('user_profile');
+           
+        3. Chuyển hướng người dùng về trang Đăng nhập (/login):
+           this.$router.push('/login');
+        ========================================================================
+      */
+      localStorage.removeItem('mock_authenticated');
+      localStorage.removeItem('mock_user_name');
+      this.closeAllMenus();
+      this.$router.push('/login');
     },
     showComingSoon() {
       alert('Feature coming soon! ❤️');

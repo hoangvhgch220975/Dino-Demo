@@ -41,6 +41,19 @@
         <span class="text-white/80 text-[13px] font-medium tracking-tight">{{ dateString }}</span>
       </div>
 
+      <!--
+        ========================================================================
+        TÍCH HỢP THỜI TIẾT TỰ ĐỘNG THEO VỊ TRÍ THỰC TẾ (FRONTEND GEOLOCATION)
+        ========================================================================
+        Hệ thống tự động sử dụng Geolocation API của trình duyệt để xin tọa độ GPS 
+        của người dùng hiện tại, sau đó gọi trực tiếp API thời tiết miễn phí Open-Meteo 
+        từ phía Frontend mà không cần thông qua Backend:
+        
+        API: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true
+        
+        Nếu người dùng chặn quyền định vị, hệ thống sẽ tự động dùng tọa độ mặc định (Hà Nội).
+        ========================================================================
+      -->
       <div
         data-label="status_weather"
         :style="elementStyle('status_weather')"
@@ -51,8 +64,8 @@
         @pointerdown.stop="$emit('element-pointerdown', 'status_weather', $event)"
         @pointerup.stop="$emit('element-pointerup', 'status_weather', $event)"
       >
-        <span class="material-symbols-outlined text-amber-400 text-[16px] animate-pulse">sunny</span>
-        <span class="text-white/80 text-[13px] font-medium tracking-tight">30°C • Clear Sky</span>
+        <span class="material-symbols-outlined text-[16px] animate-pulse" :class="weatherIconColorClass">{{ weatherIcon }}</span>
+        <span class="text-white/80 text-[13px] font-medium tracking-tight">{{ weatherText }}</span>
       </div>
     </div>
   </div>
@@ -77,6 +90,10 @@ export default {
       dateString: '',
       greeting: '',
       timer: null,
+      weatherTemp: 30,
+      weatherText: '30°C • Clear Sky',
+      weatherIcon: 'sunny',
+      weatherIconColorClass: 'text-amber-400',
     }
   },
   computed: {
@@ -89,6 +106,7 @@ export default {
   mounted() {
     this.updateTime()
     this.timer = setInterval(this.updateTime, 1000)
+    this.getWeather()
   },
   beforeUnmount() {
     if (this.timer) {
@@ -104,6 +122,73 @@ export default {
         left: `${pos.x}px`,
         top: `${pos.y}px`,
         zIndex: 20,
+      }
+    },
+    async getWeather() {
+      const defaultLat = 21.0285; // Hanoi
+      const defaultLon = 105.8542;
+
+      const fetchWeatherFromAPI = async (lat, lon) => {
+        try {
+          const response = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+          if (!response.ok) return;
+          const data = await response.json();
+          if (data && data.current_weather) {
+            const temp = Math.round(data.current_weather.temperature);
+            const code = data.current_weather.weathercode;
+            
+            // Map weather codes to Material icons and Vietnamese/English descriptions
+            let desc = 'Clear Sky';
+            let icon = 'sunny';
+            let iconColor = 'text-amber-400';
+
+            if (code === 0) {
+              desc = 'Clear Sky';
+              icon = 'sunny';
+              iconColor = 'text-amber-400';
+            } else if ([1, 2, 3].includes(code)) {
+              desc = 'Partly Cloudy';
+              icon = 'cloud';
+              iconColor = 'text-blue-300';
+            } else if ([45, 48].includes(code)) {
+              desc = 'Foggy';
+              icon = 'foggy';
+              iconColor = 'text-gray-300';
+            } else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) {
+              desc = 'Rainy';
+              icon = 'rainy';
+              iconColor = 'text-sky-400';
+            } else if ([71, 73, 75, 77, 85, 86].includes(code)) {
+              desc = 'Snowy';
+              icon = 'ac_unit';
+              iconColor = 'text-blue-100';
+            } else if ([95, 96, 99].includes(code)) {
+              desc = 'Thunderstorm';
+              icon = 'thunderstorm';
+              iconColor = 'text-purple-400';
+            }
+
+            this.weatherTemp = temp;
+            this.weatherText = `${temp}°C • ${desc}`;
+            this.weatherIcon = icon;
+            this.weatherIconColorClass = iconColor;
+          }
+        } catch (e) {
+          // Keep default if call fails
+        }
+      };
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            fetchWeatherFromAPI(position.coords.latitude, position.coords.longitude);
+          },
+          () => {
+            fetchWeatherFromAPI(defaultLat, defaultLon);
+          }
+        );
+      } else {
+        fetchWeatherFromAPI(defaultLat, defaultLon);
       }
     },
     updateTime() {
@@ -123,7 +208,19 @@ export default {
 
       this.dateString = `${dayName}, ${day} ${monthName} ${year}`
 
-      this.greeting = 'Welcome, User👋'
+      /*
+        ========================================================================
+        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (HIỂN THỊ TÊN USER ĐÃ ĐĂNG NHẬP)
+        ========================================================================
+        Thay vì cứng nhắc "User", khi user đã đăng nhập thành công vào hệ thống:
+        1. Lấy thông tin user profile từ LocalStorage, Vuex/Pinia Store hoặc Cookie:
+           const loggedInUser = JSON.parse(localStorage.getItem('user_profile'));
+        2. Hiển thị lời chào cá nhân hóa:
+           this.greeting = `Welcome, ${loggedInUser?.fullName || 'User'}👋`
+        ========================================================================
+      */
+      const mockUserName = localStorage.getItem('mock_user_name') || 'User';
+      this.greeting = `Welcome, ${mockUserName}👋`;
     },
   },
 }
