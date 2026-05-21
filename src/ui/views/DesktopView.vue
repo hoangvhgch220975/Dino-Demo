@@ -390,6 +390,7 @@ export default {
       showGroupError: false,
       showAddLabelDialog: false,
       newLabelText: '',
+      widgetOriginalY: {},
     }
   },
   computed: {
@@ -978,8 +979,11 @@ export default {
         if (!this.isEditMode) return;
         // stop if right click
         if (event.button && event.button !== 0) return;
-        this.draggingElement = id;
-        const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
+         this.draggingElement = id;
+         if (this.widgetOriginalY && this.widgetOriginalY[id] !== undefined) {
+           delete this.widgetOriginalY[id];
+         }
+         const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
         if (!overlay) return;
         const overlayRect = overlay.getBoundingClientRect();
         const minX = this.getSideDockMinX(overlay);
@@ -1029,9 +1033,35 @@ export default {
           const cy = ev.clientY || (ev.touches && ev.touches[0].clientY);
           if (cx == null || cy == null) return;
           lastClientX = cx; lastClientY = cy;
+
+          let elHeight = 48;
+          if (childEl) {
+            elHeight = childEl.getBoundingClientRect().height;
+          } else if (this.widgetRects[id]) {
+            elHeight = this.widgetRects[id].height;
+          }
+
+          const widgetRect = this.widgetRects[id];
+          const isCollapsed = widgetRect ? widgetRect.collapsed : false;
+          const padding = isCollapsed ? 96 : 72; // 4 rows (96px) when collapsed to push it up a bit more, 3 rows (72px) when expanded
+
+          let maxAllowedY = overlayRect.height - elHeight - padding;
+          const dockEl = overlay.querySelector('[data-side-dock]');
+          if (dockEl) {
+            const dockRect = dockEl.getBoundingClientRect();
+            const isBottomDock = dockRect.width > dockRect.height;
+            if (isBottomDock) {
+              const dockTopRel = Math.round(dockRect.top - overlayRect.top);
+              maxAllowedY = dockTopRel - elHeight - padding;
+            }
+          }
+          if (maxAllowedY < 0) maxAllowedY = 0;
+
           const nextX = Math.max(minX, Math.min(overlayRect.width - 48, baseX + cx - startClientX));
+          const nextY = Math.max(0, Math.min(maxAllowedY, baseY + cy - startClientY));
+
           tx = nextX - baseX;
-          ty = cy - startClientY;
+          ty = nextY - baseY;
           if (!rafId) rafId = window.requestAnimationFrame(paint);
         };
 
@@ -1044,12 +1074,36 @@ export default {
           // compute final position using lastClientX/lastClientY
           let finalX = baseX + (lastClientX - startClientX);
           let finalY = baseY + (lastClientY - startClientY);
+
+          let elHeight = 48;
+          if (childEl) {
+            elHeight = childEl.getBoundingClientRect().height;
+          } else if (this.widgetRects[id]) {
+            elHeight = this.widgetRects[id].height;
+          }
+
+          const widgetRect = this.widgetRects[id];
+          const isCollapsed = widgetRect ? widgetRect.collapsed : false;
+          const padding = isCollapsed ? 96 : 72; // 4 rows (96px) when collapsed, 3 rows (72px) when expanded
+
+          let maxAllowedY = overlayRect.height - elHeight - padding;
+          const dockEl = overlay.querySelector('[data-side-dock]');
+          if (dockEl) {
+            const dockRect = dockEl.getBoundingClientRect();
+            const isBottomDock = dockRect.width > dockRect.height;
+            if (isBottomDock) {
+              const dockTopRel = Math.round(dockRect.top - overlayRect.top);
+              maxAllowedY = dockTopRel - elHeight - padding;
+            }
+          }
+          if (maxAllowedY < 0) maxAllowedY = 0;
+
           if (this.gridEnabled) {
             finalX = this.clampToGridRange(finalX, minX, overlayRect.width - 48);
-            finalY = this.clampToGrid(finalY, overlayRect.height - 48);
+            finalY = this.clampToGridRange(finalY, 0, maxAllowedY);
           } else {
             finalX = Math.max(minX, Math.min(overlayRect.width - 48, finalX));
-            finalY = Math.max(0, Math.min(overlayRect.height - 48, finalY));
+            finalY = Math.max(0, Math.min(maxAllowedY, finalY));
           }
           if (capturedEl && capturedPointerId && capturedEl.releasePointerCapture) {
             try { capturedEl.releasePointerCapture(capturedPointerId); } catch (e) { /* ignore */ }
@@ -1293,6 +1347,8 @@ export default {
         this.$nextTick(() => {
           this.collectWidgetRects();
           this.resolveAllElementOverlaps(id);
+          // Ensure the widget fits in the main viewport
+          try { this.ensureWidgetFitsInView(id); } catch (e) { void e; }
         });
       },
       collectWidgetRects() {
@@ -1310,6 +1366,72 @@ export default {
           };
         });
         this.widgetRects = next;
+      },
+
+      ensureWidgetFitsInView(id) {
+        const root = this.$refs.desktopMain;
+        if (!root) return;
+        const el = root.querySelector(`[data-widget-id="${id}"]`);
+        if (!el) return;
+        const elRect = el.getBoundingClientRect();
+        const rootRect = root.getBoundingClientRect();
+        let viewportBottom = rootRect.top + root.clientHeight; // visible bottom of container
+
+        // Respect bottom dock if present
+        const dockEl = root.querySelector('[data-side-dock]');
+        if (dockEl) {
+          const dockRect = dockEl.getBoundingClientRect();
+          const isBottomDock = dockRect.width > dockRect.height;
+          if (isBottomDock) {
+            viewportBottom = dockRect.top;
+          }
+        }
+
+        const pos = this.widgetPositions[id];
+        if (!pos || typeof pos.y !== 'number') return;
+
+        const widgetRect = this.widgetRects[id];
+        const isCollapsed = widgetRect ? widgetRect.collapsed : false;
+        const padding = isCollapsed ? 96 : 72; // 4 rows (96px) when collapsed, 3 rows (72px) when expanded
+
+        let targetY = pos.y;
+
+        if (isCollapsed) {
+          // If collapsed, check if we have a stored original Y to restore
+          if (this.widgetOriginalY && this.widgetOriginalY[id] !== undefined) {
+            targetY = this.widgetOriginalY[id];
+            delete this.widgetOriginalY[id];
+          }
+        }
+
+        // Perform unified bottom boundary check
+        // Using elRect.height (current actual size) or fallback to 48px
+        const elHeight = elRect.height || (widgetRect ? widgetRect.height : 48);
+        const predictedBottom = targetY + elHeight + rootRect.top;
+
+        if (predictedBottom > viewportBottom - padding) {
+          const overflow = predictedBottom - (viewportBottom - padding);
+
+          // Store the original Y before pushing it up (only when expanded)
+          if (!isCollapsed && this.widgetOriginalY && this.widgetOriginalY[id] === undefined) {
+            this.widgetOriginalY[id] = pos.y;
+          }
+
+          targetY = targetY - overflow;
+          if (targetY < 0) targetY = 0;
+        }
+
+        if (this.gridEnabled) {
+          targetY = this.snapToGrid(targetY);
+        }
+
+        if (targetY !== pos.y) {
+          this.widgetPositions = {
+            ...this.widgetPositions,
+            [id]: { ...pos, y: targetY }
+          };
+          this.saveLayout();
+        }
       },
       resolveWidgetOverlaps(changedId) {
         this.resolveAllElementOverlaps(changedId);
