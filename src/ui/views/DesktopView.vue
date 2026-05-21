@@ -1393,16 +1393,24 @@ export default {
             if (!Array.isArray(w.appIds)) return;
             const i = w.appIds.indexOf(appId);
             if (i !== -1) {
-              // remove from group
+              // Remove from group
               w.appIds.splice(i, 1);
-              // add to desktopApps at group's position
-              const pos = this.widgetPositions[id] || { x: 40, y: 80 };
-              const dx = this.snapToGrid(pos.x + 48);
-              const dy = this.snapToGrid(pos.y + 48);
-              const exists = (this.desktopApps || []).some(d => d.appId === appId);
-              if (!exists) this.desktopApps = [...this.desktopApps, { appId, position: { x: dx, y: dy } }];
-              // ensure visible in main UI
-              try { this.selectedAppKeys.add(appId); this.selectedAppKeys = new Set(this.selectedAppKeys); } catch (e) { void e; }
+              // Delete completely from layout (reverts to "More Apps" dropdown)
+              this.selectedAppKeys.delete(appId);
+              this.selectedAppKeys = new Set(this.selectedAppKeys);
+              this.desktopApps = (this.desktopApps || []).filter(d => d.appId !== appId);
+              try { this.closeWindow(appId); } catch (e) { void e; }
+
+              const appDef = this.appsById[appId];
+              if (appDef && appDef.label) {
+                const labelName = appDef.label;
+                const p = { ...this.iconPositions };
+                if (p[labelName] !== undefined) {
+                  delete p[labelName];
+                  this.iconPositions = p;
+                }
+              }
+
               this.widgets = [...this.widgets.slice(0, idx), { ...w }, ...this.widgets.slice(idx+1)];
               this.saveLayout();
             }
