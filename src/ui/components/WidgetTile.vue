@@ -22,13 +22,21 @@
             <span class="material-symbols-outlined text-white text-[18px]">folder</span>
           </div>
           <div class="rounded-full bg-white/6 px-3 py-1 text-[12px] font-bold uppercase tracking-wider select-none">
-            <div @dblclick.stop="editing = true">
-              <input v-if="editing" v-model="text" @blur="stopEditing" @keyup.enter="stopEditing" class="bg-transparent border-none focus:ring-0 text-sm font-bold tracking-widest uppercase p-0 w-auto min-w-[80px]" autoFocus />
-              <div v-else class="select-none">{{ text }}</div>
+            <div @dblclick.stop="requestRename">
+              <div class="select-none">{{ text }}</div>
             </div>
           </div>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            v-if="isEditMode && canRenameGroup"
+            class="hidden h-7 w-7 items-center justify-center rounded-md bg-white/6 text-white/65 opacity-0 transition hover:bg-white/12 hover:text-white group-hover/widget:flex group-hover/widget:opacity-100"
+            title="Đổi tên group"
+            @pointerdown.stop
+            @click.stop="requestRename"
+          >
+            <span class="material-symbols-outlined text-[16px]">edit</span>
+          </button>
           <button v-if="isEditMode" class="px-2 py-1 rounded bg-red-600 text-white" @click.stop="$emit('remove', id)">✕</button>
         </div>
       </div>
@@ -103,7 +111,7 @@ export default {
     position: { type: Object, default: null },
     ownerMap: { type: Object, default: () => ({}) },
   },
-  emits: ['remove', 'pointerdown', 'dragstart', 'app-dragstart', 'child-longpress', 'update-content', 'drop-into', 'open', 'enable-edit', 'start-drag', 'remove-from-widget', 'measure', 'icon-upload'],
+  emits: ['remove', 'pointerdown', 'dragstart', 'app-dragstart', 'child-longpress', 'update-content', 'rename-request', 'drop-into', 'open', 'enable-edit', 'start-drag', 'remove-from-widget', 'measure', 'icon-upload'],
   data() {
     return {
       editing: false,
@@ -130,6 +138,9 @@ export default {
     },
     isProductGroup() {
       return this.id === 'label_products' || (this.content && (this.content.text === 'Product' || this.content.label === 'Product'));
+    },
+    canRenameGroup() {
+      return this.id !== 'label_apps' && this.id !== 'label_products';
     }
   },
   watch: {
@@ -145,6 +156,12 @@ export default {
     position() {
       this.$nextTick(this.emitMeasure);
     },
+    content: {
+      handler(next) {
+        this.text = (next && (next.text || next.label)) || 'Label';
+      },
+      deep: true,
+    },
   },
   mounted() {
     if (this.type === 'time') {
@@ -159,9 +176,9 @@ export default {
     getTime() {
       return new Date().toLocaleTimeString();
     },
-    stopEditing() {
-      this.editing = false;
-      this.$emit('update-content', { id: this.id, content: { text: this.text } });
+    requestRename() {
+      if (!this.canRenameGroup) return;
+      this.$emit('rename-request', { id: this.id, text: this.text });
     },
     onMouseDown(e) {
       if (!this.isEditMode) return;

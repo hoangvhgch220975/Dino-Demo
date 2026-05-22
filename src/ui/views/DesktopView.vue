@@ -49,6 +49,25 @@
             </div>
           </div>
         </transition>
+        <transition name="fade">
+          <div v-if="showRenameGroupDialog" class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40">
+            <div class="glass-panel noise-overlay rounded-[16px] border border-white/10 bg-white/[0.045] shadow-[0_24px_80px_rgba(0,0,0,0.42)] backdrop-blur-2xl w-[min(480px,90vw)] px-6 py-6 text-white">
+              <div class="text-[16px] font-bold text-white mb-2">Đổi tên group</div>
+              <div class="text-sm text-white/80 mb-4">Nhập tên group mới:</div>
+              <input
+                ref="renameGroupInput"
+                v-model="renameGroupText"
+                class="w-full px-3 py-2 rounded-md bg-white/[0.02] border border-white/8 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-white/10"
+                placeholder="Tên group"
+                @keyup.enter="confirmRenameGroup"
+              />
+              <div class="mt-4 flex justify-end gap-3">
+                <button class="px-4 py-2 rounded-md bg-white/[0.04] hover:bg-white/[0.06] text-white/80" @click="cancelRenameGroup">Hủy</button>
+                <button class="px-4 py-2 rounded-md bg-primary text-white font-semibold hover:brightness-95" @click="confirmRenameGroup">OK</button>
+              </div>
+            </div>
+          </div>
+        </transition>
         <!-- Help Dialog -->
         <HelpDialog v-if="showHelpDialog" @close="showHelpDialog = false" />
         <!-- Global overlay removed to allow drag/drop; edit overlay handles background clicks -->
@@ -259,6 +278,7 @@
           @pointerdown="startPointerDrag(w.id, $event)"
           @dragstart="(e, id) => startPointerDrag(w.id, e)"
           @update-content="updateWidgetContent"
+          @rename-request="openRenameGroupDialog"
           @drop-into="handleWidgetDrop"
           @open="openAppByLabel"
           @enable-edit="enterEditMode"
@@ -282,6 +302,7 @@
         :is-edit-mode="isEditMode"
         :position="widgetPositions[w.id]"
         @update-content="updateWidgetContent"
+        @rename-request="openRenameGroupDialog"
         @drop-into="handleWidgetDrop"
         @open="openAppByLabel"
         @enable-edit="enterEditMode"
@@ -498,6 +519,9 @@ export default {
       showGroupError: false,
       showAddLabelDialog: false,
       newLabelText: '',
+      showRenameGroupDialog: false,
+      renameGroupId: '',
+      renameGroupText: '',
       widgetOriginalY: {},
       isSelecting: false,
       selectionStart: null,
@@ -1584,6 +1608,23 @@ export default {
             return;
           }
 
+          const targetApp = isDesktopApp && typeof document !== 'undefined'
+            ? (document.elementsFromPoint(lastClientX, lastClientY)
+                .map(el => el.closest ? el.closest('[data-app-id]') : null)
+                .map(el => el ? el.getAttribute('data-app-id') : null)
+                .find(appId => appId && !appsToMove.includes(appId)) || null)
+            : null;
+          if (targetApp) {
+            this.createGroupFromAppIds([...appsToMove, targetApp], { clientX: lastClientX, clientY: lastClientY });
+            this.draggingElement = null;
+            this.dragStartPositions = {};
+            try {
+              window.__dino_drag_payload = null;
+              window.__dino_drag_selected_apps = null;
+            } catch (e) { void e; }
+            return;
+          }
+
           if (this.gridEnabled) {
             finalX = this.clampToGridRange(finalX, minX, overlayRect.width - 48);
             finalY = this.clampToGridRange(finalY, 0, maxAllowedY);
@@ -1851,6 +1892,34 @@ export default {
           this.showAddLabelDialog = false;
           this.newLabelText = '';
         },
+      openRenameGroupDialog({ id, text }) {
+        if (id === 'label_apps' || id === 'label_products') return;
+        this.renameGroupId = id;
+        this.renameGroupText = text || '';
+        this.showRenameGroupDialog = true;
+        this.$nextTick(() => {
+          try {
+            if (this.$refs.renameGroupInput) {
+              this.$refs.renameGroupInput.focus();
+              this.$refs.renameGroupInput.select();
+            }
+          } catch (e) { void e; }
+        });
+      },
+      confirmRenameGroup() {
+        const id = this.renameGroupId;
+        const text = String(this.renameGroupText || '').trim();
+        this.showRenameGroupDialog = false;
+        this.renameGroupId = '';
+        this.renameGroupText = '';
+        if (!id || !text || id === 'label_apps' || id === 'label_products') return;
+        this.updateWidgetContent({ id, content: { text } });
+      },
+      cancelRenameGroup() {
+        this.showRenameGroupDialog = false;
+        this.renameGroupId = '';
+        this.renameGroupText = '';
+      },
       addWidget(type, labelText = '') {
         const id = `w_${Date.now()}`;
         const item = { id, type, content: { text: labelText || (type === 'label' ? 'New Label' : '') } };
@@ -1862,6 +1931,55 @@ export default {
           const x = this.snapToGrid(24);
           const y = this.snapToGrid(80 + labelCount * 48);
           this.widgetPositions = { ...this.widgetPositions, [id]: { x, y } };
+        });
+      },
+      getNextGroupName() {
+        const existingNames = new Set((this.widgets || [])
+          .map(w => String((w.content && (w.content.text || w.content.label)) || '').trim().toLowerCase())
+          .filter(Boolean));
+        if (!existingNames.has('group')) return 'group';
+        let index = 1;
+        while (existingNames.has(`group(${index})`)) {
+          index += 1;
+        }
+        return `group(${index})`;
+      },
+      createGroupFromAppIds(appIds, { clientX, clientY } = {}) {
+        const uniqueAppIds = Array.from(new Set((appIds || []).filter(Boolean)));
+        if (uniqueAppIds.length < 2) return;
+
+        this.desktopApps = (this.desktopApps || []).filter(d => !uniqueAppIds.includes(d.appId));
+        this.widgets.forEach(w => {
+          if (!Array.isArray(w.appIds)) return;
+          w.appIds = w.appIds.filter(a => !uniqueAppIds.includes(a));
+        });
+
+        const id = `w_${Date.now()}`;
+        const newWidget = {
+          id,
+          type: 'label',
+          content: { text: this.getNextGroupName() },
+          appIds: uniqueAppIds,
+          collapsed: false,
+          z: this.zCounter,
+        };
+
+        const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
+        let x = this.snapToGrid(40);
+        let y = this.snapToGrid(80);
+        if (overlay && typeof clientX === 'number' && typeof clientY === 'number') {
+          const rect = overlay.getBoundingClientRect();
+          x = this.clampToGridRange(clientX - rect.left - 40, this.getSideDockMinX(overlay), rect.width - 200);
+          y = this.clampToGrid(clientY - rect.top - 24, this.getElementMaxY(overlay, 120, { id }));
+        }
+
+        this.widgets.push(newWidget);
+        this.widgetPositions = { ...this.widgetPositions, [id]: { x, y } };
+        this.selectedAppIds = new Set();
+        this.saveLayout();
+        this.$nextTick(() => {
+          this.collectWidgetRects();
+          this.resolveAllElementOverlaps(id);
         });
       },
       saveLayout() {
@@ -2269,27 +2387,7 @@ export default {
           if (!from || !to || from === to) return;
           const fromId = keyFromLabel(from);
           const toId = keyFromLabel(to);
-
-          // remove from desktopApps and other groups
-          this.desktopApps = (this.desktopApps || []).filter(d => d.appId !== fromId && d.appId !== toId);
-          this.widgets.forEach(w => {
-            if (!Array.isArray(w.appIds)) return;
-            w.appIds = w.appIds.filter(a => a !== fromId && a !== toId);
-          });
-
-          const id = `w_${Date.now()}`;
-          const newWidget = { id, type: 'label', content: { text: 'New Group' }, appIds: [toId, fromId], collapsed: false, z: this.zCounter };
-          // position near clientX/clientY if provided, otherwise top-left stack
-          const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
-          let x = this.snapToGrid(40), y = this.snapToGrid(80);
-          if (overlay && typeof clientX === 'number') {
-            const r = overlay.getBoundingClientRect();
-            x = this.clampToGrid(clientX - r.left - 40, r.width - 160);
-            y = this.clampToGrid(clientY - r.top - 24, r.height - 160);
-          }
-          this.widgets.push(newWidget);
-          this.widgetPositions = { ...this.widgetPositions, [id]: { x, y } };
-          this.saveLayout();
+          this.createGroupFromAppIds([toId, fromId], { clientX, clientY });
       },
         handleWidgetDrop({ id, appId, label, targetAppId, targetLabel, index }) {
           if (!appId && label) {
