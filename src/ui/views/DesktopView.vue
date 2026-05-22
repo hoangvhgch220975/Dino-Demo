@@ -1151,7 +1151,7 @@ export default {
       const rect = desktop.getBoundingClientRect();
       const appId = keyFromLabel(label);
       const x = this.clampToGridRange(event.clientX - rect.left, this.getSideDockMinX(desktop), rect.width - 48);
-      const y = this.clampToGrid(event.clientY - rect.top, rect.height - 48);
+      const y = this.clampToGrid(event.clientY - rect.top, this.getElementMaxY(desktop, 72));
 
       this.placeAppOnDesktop(appId, { x, y });
     },
@@ -1196,7 +1196,7 @@ export default {
       const relX = event.clientX - rect.left;
       const relY = event.clientY - rect.top;
       const x = this.clampToGridRange(relX, this.getSideDockMinX(overlay), rect.width - 48);
-      const y = this.clampToGrid(relY, rect.height - 48);
+      const y = this.clampToGrid(relY, this.getElementMaxY(overlay, 72));
       const appId = keyFromLabel(label);
 
       // Check if dragging multiple apps
@@ -1219,7 +1219,7 @@ export default {
               let newX = otherApp.position.x + dx;
               let newY = otherApp.position.y + dy;
               newX = this.clampToGridRange(newX, this.getSideDockMinX(overlay), rect.width - 48);
-              newY = this.clampToGrid(newY, rect.height - 48);
+              newY = this.clampToGrid(newY, this.getElementMaxY(overlay, 72));
               otherApp.position = { x: newX, y: newY };
             }
           });
@@ -1261,7 +1261,7 @@ export default {
       const relX = event.clientX - rect.left;
       const relY = event.clientY - rect.top;
       const x = this.clampToGridRange(relX, this.getSideDockMinX(overlay), rect.width - 48);
-      const y = this.clampToGrid(relY, rect.height - 48);
+      const y = this.clampToGrid(relY, this.getElementMaxY(overlay, 72));
 
       const appId = this.draggedAppId;
       const appsToMove = (window.__dino_drag_selected_apps && window.__dino_drag_selected_apps.includes(appId))
@@ -1282,7 +1282,7 @@ export default {
             let newX = orig.x + dx;
             let newY = orig.y + dy;
             newX = this.clampToGridRange(newX, this.getSideDockMinX(overlay), rect.width - 48);
-            newY = this.clampToGrid(newY, rect.height - 48);
+            newY = this.clampToGrid(newY, this.getElementMaxY(overlay, 72));
             if (!d.position || d.position.x !== newX || d.position.y !== newY) {
               d.position = { x: newX, y: newY };
               changed = true;
@@ -1514,7 +1514,7 @@ export default {
               const originalPos = originalAppPositions[d.appId];
               if (originalPos) {
                 const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + tx));
-                const nextY = Math.max(0, Math.min(overlayRect.height - 48, originalPos.y + ty));
+                const nextY = Math.max(0, Math.min(this.getElementMaxY(overlay, 48), originalPos.y + ty));
                 return { ...d, position: { x: Math.round(nextX), y: Math.round(nextY) } };
               }
               return d;
@@ -1538,21 +1538,7 @@ export default {
             elHeight = this.widgetRects[id].height;
           }
 
-          const widgetRect = this.widgetRects[id];
-          const isCollapsed = widgetRect ? widgetRect.collapsed : false;
-          const padding = isCollapsed ? 96 : 72; // 4 rows (96px) when collapsed to push it up a bit more, 3 rows (72px) when expanded
-
-          let maxAllowedY = overlayRect.height - elHeight - padding;
-          const dockEl = overlay.querySelector('[data-side-dock]');
-          if (dockEl) {
-            const dockRect = dockEl.getBoundingClientRect();
-            const isBottomDock = dockRect.width > dockRect.height;
-            if (isBottomDock) {
-              const dockTopRel = Math.round(dockRect.top - overlayRect.top);
-              maxAllowedY = dockTopRel - elHeight - padding;
-            }
-          }
-          if (maxAllowedY < 0) maxAllowedY = 0;
+          const maxAllowedY = this.getElementMaxY(overlay, elHeight, { id });
 
           const nextX = Math.max(minX, Math.min(overlayRect.width - 48, baseX + cx - startClientX));
           const nextY = Math.max(0, Math.min(maxAllowedY, baseY + cy - startClientY));
@@ -1579,21 +1565,7 @@ export default {
             elHeight = this.widgetRects[id].height;
           }
 
-          const widgetRect = this.widgetRects[id];
-          const isCollapsed = widgetRect ? widgetRect.collapsed : false;
-          const padding = isCollapsed ? 96 : 72; // 4 rows (96px) when collapsed, 3 rows (72px) when expanded
-
-          let maxAllowedY = overlayRect.height - elHeight - padding;
-          const dockEl = overlay.querySelector('[data-side-dock]');
-          if (dockEl) {
-            const dockRect = dockEl.getBoundingClientRect();
-            const isBottomDock = dockRect.width > dockRect.height;
-            if (isBottomDock) {
-              const dockTopRel = Math.round(dockRect.top - overlayRect.top);
-              maxAllowedY = dockTopRel - elHeight - padding;
-            }
-          }
-          if (maxAllowedY < 0) maxAllowedY = 0;
+          const maxAllowedY = this.getElementMaxY(overlay, elHeight, { id });
 
           const targetWidget = isDesktopApp && typeof document !== 'undefined'
             ? (document.elementsFromPoint(lastClientX, lastClientY)
@@ -1797,6 +1769,29 @@ export default {
         const snappedMin = Math.ceil(Math.max(0, min) / this.gridSize) * this.gridSize;
         const snappedMax = Math.floor(Math.max(snappedMin, max) / this.gridSize) * this.gridSize;
         return Math.max(snappedMin, Math.min(snappedMax, this.snapToGrid(value)));
+      },
+      getElementBottomPadding(id) {
+        const widgetRect = id ? this.widgetRects[id] : null;
+        return widgetRect && widgetRect.collapsed ? 96 : 72;
+      },
+      getElementMaxY(root, elementHeight, options = {}) {
+        if (!root) return 0;
+        const rootRect = root.getBoundingClientRect();
+        const height = Math.max(0, Number(elementHeight || 48));
+        const padding = this.getElementBottomPadding(options.id);
+        let bottomLimit = rootRect.height;
+
+        const desktop = this.$refs.desktopMain;
+        const dock = (root.querySelector && root.querySelector('[data-side-dock]')) || (desktop && desktop.querySelector('[data-side-dock]'));
+        if (dock) {
+          const dockRect = dock.getBoundingClientRect();
+          const isBottomDock = dockRect.width > dockRect.height;
+          if (isBottomDock) {
+            bottomLimit = Math.max(0, Math.round(dockRect.top - rootRect.top));
+          }
+        }
+
+        return Math.max(0, bottomLimit - height - padding);
       },
       getSideDockMinX(root) {
         const desktop = this.$refs.desktopMain;
@@ -2123,7 +2118,7 @@ export default {
 
         const findNearestFreePosition = (entry, placed) => {
           const maxX = Math.floor(Math.max(0, rootRect.width - entry.width) / this.gridSize) * this.gridSize;
-          const maxY = Math.floor(Math.max(0, rootRect.height - entry.height) / this.gridSize) * this.gridSize;
+          const maxY = Math.floor(this.getElementMaxY(root, entry.height, { id: entry.id }) / this.gridSize) * this.gridSize;
           const originX = this.clampToGrid(entry.x, maxX);
           const originY = this.clampToGrid(entry.y, maxY);
 
