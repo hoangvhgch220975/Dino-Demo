@@ -10,7 +10,7 @@
       />
 
       <main 
-        class="relative h-full w-full pb-32 px-12 flex flex-col items-center justify-start overflow-y-auto pt-8"
+        class="relative h-full w-full pb-32 px-12 flex flex-col items-center justify-start overflow-hidden pt-8"
         ref="desktopMain"
         @dragover.prevent
         @dragenter.prevent
@@ -71,6 +71,45 @@
         <!-- Help Dialog -->
         <HelpDialog v-if="showHelpDialog" @close="showHelpDialog = false" />
         <!-- Global overlay removed to allow drag/drop; edit overlay handles background clicks -->
+        <div
+          v-if="totalDesktopPages > 1 || isEditMode"
+          class="fixed bottom-6 left-1/2 z-[90] flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/12 bg-black/25 px-3 py-2 text-white shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+          @pointerdown.stop
+          @click.stop
+        >
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/70 transition hover:bg-white/15 hover:text-white disabled:opacity-35"
+            :disabled="currentPage <= 0"
+            @click="setDesktopPage(currentPage - 1)"
+          >
+            <span class="material-symbols-outlined text-[18px]">chevron_left</span>
+          </button>
+          <button
+            v-for="page in totalDesktopPages"
+            :key="'page_' + page"
+            :class="[
+              'h-2.5 rounded-full transition-all',
+              currentPage === page - 1 ? 'w-7 bg-white' : 'w-2.5 bg-white/35 hover:bg-white/60'
+            ]"
+            :aria-label="`Page ${page}`"
+            @click="setDesktopPage(page - 1)"
+          ></button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/70 transition hover:bg-white/15 hover:text-white disabled:opacity-35"
+            :disabled="currentPage >= totalDesktopPages - 1"
+            @click="setDesktopPage(currentPage + 1)"
+          >
+            <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+          </button>
+          <button
+            v-if="isEditMode"
+            class="flex h-8 w-8 items-center justify-center rounded-full bg-white/8 text-white/70 transition hover:bg-white/15 hover:text-white"
+            @click="addNewPage"
+            title="Thêm trang mới"
+          >
+            <span class="material-symbols-outlined text-[18px]">add</span>
+          </button>
+        </div>
 
         <div v-show="!isEditMode" data-label="statusPanel">
             <StatusPanel
@@ -195,14 +234,14 @@
           <input type="file" ref="wallpaperInput" class="hidden" accept="image/*" @change="onWallpaperFileChange" />
         </div>
         <!-- Positioned clones for each labeled element (movable but not deletable) -->
-        <template v-for="(pos, key) in iconPositions" :key="key">
+        <template v-for="(pos, key) in currentPageIconPositions" :key="key">
           <!-- searchBar is rendered separately below with resize handle -->
           <div v-if="elementHtml[key] && key !== 'searchBar'" :style="posStyle(pos)" class="pointer-events-auto cursor-move" @pointerdown.stop="startPointerDrag(key, $event)" v-html="elementHtml[key]"></div>
         </template>
 
         <!-- Search bar: draggable + resizable in edit mode -->
         <div
-          v-if="iconPositions.searchBar"
+          v-if="iconPositions.searchBar && isPositionOnCurrentPage(iconPositions.searchBar)"
           :style="searchBarEditStyle"
           class="pointer-events-auto"
           data-label="searchBar"
@@ -260,7 +299,7 @@
           />
         </template>
         <WidgetTile
-          v-for="w in widgets"
+          v-for="w in visibleWidgets"
           :key="w.id"
           :id="w.id"
           :type="w.type"
@@ -293,7 +332,7 @@
     <!-- Widgets always visible outside edit overlay -->
     <div v-if="!isEditMode">
       <WidgetTile
-        v-for="w in widgets"
+        v-for="w in visibleWidgets"
         :key="w.id + '_view'"
         :id="w.id"
         :type="w.type"
@@ -449,6 +488,8 @@ export default {
       gridEnabled: false,
       gridSize: 24,
       showGrid: true,
+      currentPage: 0,
+      customTotalPages: 0, // Số lượng trang trống do người dùng tạo thủ công trong chế độ Edit
       widgets: [],
       widgetPositions: {},
       widgetRects: {},
@@ -565,6 +606,7 @@ export default {
       return (this.desktopApps || [])
         .filter(a => {
           if (!a || !a.appId) return false;
+          if (!this.isPositionOnCurrentPage(a.position)) return false;
           if (seen.has(a.appId)) return false;
           seen.add(a.appId);
           return true;
@@ -583,6 +625,31 @@ export default {
             displayMode: a.displayMode || 'icon',
           };
         });
+    },
+    visibleWidgets() {
+      return (this.widgets || []).filter(w => this.isPositionOnCurrentPage(this.widgetPositions[w.id]));
+    },
+    currentPageIconPositions() {
+      const next = {};
+      Object.entries(this.iconPositions || {}).forEach(([key, pos]) => {
+        if (this.isPositionOnCurrentPage(pos)) next[key] = pos;
+      });
+      return next;
+    },
+    totalDesktopPages() {
+      // Tìm số trang lớn nhất từ tọa độ vị trí của các phần tử hiện có
+      let maxPage = 0;
+      const visit = (pos) => {
+        const page = this.getPositionPage(pos);
+        if (page > maxPage) maxPage = page;
+      };
+      Object.values(this.iconPositions || {}).forEach(visit);
+      Object.values(this.widgetPositions || {}).forEach(visit);
+      (this.desktopApps || []).forEach(app => visit(app && app.position));
+      
+      const calculatedPages = maxPage + 1;
+      // Kết hợp số trang thực tế với số trang được người dùng tạo thủ công (customTotalPages)
+      return Math.max(calculatedPages, this.customTotalPages || 1);
     },
     gridStyle() {
       return {
@@ -787,6 +854,16 @@ export default {
       },
       deep: true,
     },
+    isEditMode(val) {
+      if (!val) {
+        // Dọn dẹp các trang trống không sử dụng khi thoát chế độ Edit
+        this.customTotalPages = 0;
+        if (this.currentPage >= this.totalDesktopPages) {
+          this.currentPage = Math.max(0, this.totalDesktopPages - 1);
+        }
+        this.saveLayout();
+      }
+    },
     '$route.params.appKey': {
       immediate: true,
       handler(appKey) {
@@ -797,6 +874,40 @@ export default {
     },
   },
   methods: {
+    getPositionPage(pos) {
+      const page = pos && Number.isInteger(pos.page) ? pos.page : 0;
+      return Math.max(0, page);
+    },
+    isPositionOnCurrentPage(pos) {
+      return this.getPositionPage(pos) === this.currentPage;
+    },
+    // Kiểm tra xem vị trí cụ thể trên một trang có khả dụng hay không (không bị chồng lấn bởi phần tử khác)
+    isPositionAvailableOnPage({ x, y, width = 72, height = 84, page = this.currentPage, ignoreIds = [] } = {}) {
+      const occupied = this.getPageOccupancy(page);
+      const step = this.gridSize;
+      
+      // Định nghĩa hàm kiểm tra hai vùng chữ nhật có đè lên nhau không
+      const overlaps = (a, b) => (
+        a.x < b.x + b.width + step
+        && a.x + a.width + step > b.x
+        && a.y < b.y + b.height + step
+        && a.y + a.height + step > b.y
+      );
+      
+      const candidate = { x, y, width, height };
+      return !occupied
+        .filter(entry => !ignoreIds.includes(entry.id))
+        .some(entry => overlaps(entry, candidate));
+    },
+    setDesktopPage(page) {
+      const nextPage = Math.max(0, Math.min(this.totalDesktopPages - 1, Number(page) || 0));
+      this.currentPage = nextPage;
+      this.selectedAppIds = new Set();
+      this.$nextTick(() => this.resolveAllElementOverlaps());
+    },
+    getPagedPosition(position, page = this.currentPage) {
+      return { ...(position || {}), page: Math.max(0, Number(page) || 0) };
+    },
     firstLetter(label) {
       return String(label || '').trim().charAt(0) || '?';
     },
@@ -885,7 +996,7 @@ export default {
               })
               .map(d => ({
                 appId: String(d.appId),
-                position: d.position || { x: 40, y: 80 },
+                position: this.getPagedPosition(d.position || { x: 40, y: 80 }, this.getPositionPage(d.position)),
                 displayMode: d.displayMode || 'icon'
               }));
           }
@@ -1411,12 +1522,25 @@ export default {
           return true;
         });
 
+        const requestedPosition = this.getPagedPosition(position, this.getPositionPage(position));
+        const size = this.getApproxElementSize('icon');
+        let finalPosition = requestedPosition;
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number' || !this.isPositionAvailableOnPage({
+          ...requestedPosition,
+          width: size.width,
+          height: size.height,
+          ignoreIds: [appId],
+        })) {
+          finalPosition = this.findFreePositionOnPage({ width: size.width, height: size.height, startPage: this.currentPage });
+        }
+        this.currentPage = this.getPositionPage(finalPosition);
+
         const existing = filtered.find(d => d.appId === appId);
         if (existing) {
-          existing.position = position;
+          existing.position = finalPosition;
           this.desktopApps = filtered;
         } else {
-          this.desktopApps = [...filtered, { appId, position }];
+          this.desktopApps = [...filtered, { appId, position: finalPosition }];
         }
 
         this.selectedAppKeys.add(appId);
@@ -1462,17 +1586,27 @@ export default {
       reader.readAsDataURL(file);
     },
     onEditOverlayClick(event) {
-        // Close only when clicking the overlay background itself, not its children
+        // Chỉ đóng khi click trực tiếp vào background overlay, không click vào con của nó
         if (event.target === event.currentTarget) {
           this.isEditMode = false;
           this.selectedAppIds = new Set();
         }
+      },
+      addNewPage() {
+        // Thêm trang trống thủ công trong chế độ Edit
+        this.customTotalPages = this.totalDesktopPages + 1;
+        this.currentPage = this.customTotalPages - 1;
+        this.saveLayout();
       },
       // Pointer drag support for positioned (non-app) elements and widgets
       startPointerDrag(id, event) {
         if (!this.isEditMode) return;
         // stop if right click
         if (event.button && event.button !== 0) return;
+        
+        let edgeTimer = null; // Bộ hẹn giờ chuyển trang khi giữ chuột sát mép
+        let lastEdgeAction = 0; // Thời gian cuối cùng thực hiện chuyển trang sát mép
+        
          this.draggingElement = id;
          if (this.widgetOriginalY && this.widgetOriginalY[id] !== undefined) {
            delete this.widgetOriginalY[id];
@@ -1539,7 +1673,7 @@ export default {
               if (originalPos) {
                 const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + tx));
                 const nextY = Math.max(0, Math.min(this.getElementMaxY(overlay, 48), originalPos.y + ty));
-                return { ...d, position: { x: Math.round(nextX), y: Math.round(nextY) } };
+                return { ...d, position: { ...d.position, x: Math.round(nextX), y: Math.round(nextY), page: this.getPositionPage(d.position) } };
               }
               return d;
             });
@@ -1554,6 +1688,72 @@ export default {
           const cy = ev.clientY || (ev.touches && ev.touches[0].clientY);
           if (cx == null || cy == null) return;
           lastClientX = cx; lastClientY = cy;
+
+          // Drag-to-Edge: Tự động chuyển trang khi kéo sát viền trái/phải màn hình
+          const now = Date.now();
+          const isNearLeft = cx < 80;
+          const isNearRight = cx > window.innerWidth - 80;
+
+          if ((isNearLeft && this.currentPage > 0) || isNearRight) {
+            if (!edgeTimer && now - lastEdgeAction > 1000) {
+              edgeTimer = window.setTimeout(() => {
+                let targetPage = this.currentPage;
+                if (isNearLeft && this.currentPage > 0) {
+                  targetPage = this.currentPage - 1;
+                } else if (isNearRight) {
+                  if (this.currentPage >= this.totalDesktopPages - 1) {
+                    // Tự động tạo trang trống mới khi kéo sát mép phải ở trang cuối cùng
+                    this.customTotalPages = this.totalDesktopPages + 1;
+                  }
+                  targetPage = this.currentPage + 1;
+                }
+
+                if (targetPage !== this.currentPage) {
+                  const targetElementId = id;
+                  
+                  // Cập nhật page cho phần tử/nhóm phần tử đang kéo để nó thuộc về trang mới
+                  if (isDesktopApp) {
+                    this.desktopApps = (this.desktopApps || []).map(d => {
+                      if (appsToMove.includes(d.appId)) {
+                        return { ...d, position: { ...d.position, page: targetPage } };
+                      }
+                      return d;
+                    });
+                    appsToMove.forEach(aid => {
+                      if (originalAppPositions[aid]) {
+                        originalAppPositions[aid].page = targetPage;
+                      }
+                    });
+                  } else if (this.widgetPositions[targetElementId] !== undefined) {
+                    this.widgetPositions = {
+                      ...this.widgetPositions,
+                      [targetElementId]: { ...this.widgetPositions[targetElementId], page: targetPage }
+                    };
+                  } else if (this.iconPositions[targetElementId] !== undefined) {
+                    this.iconPositions = {
+                      ...this.iconPositions,
+                      [targetElementId]: { ...this.iconPositions[targetElementId], page: targetPage }
+                    };
+                  }
+
+                  // Thực hiện chuyển trang và gán thời điểm tác vụ
+                  this.currentPage = targetPage;
+                  lastEdgeAction = Date.now();
+                  edgeTimer = null;
+
+                  // Tính toán lại va chạm để cập nhật mượt mà trên trang mới
+                  this.$nextTick(() => {
+                    this.resolveAllElementOverlaps(id);
+                  });
+                }
+              }, 800);
+            }
+          } else {
+            if (edgeTimer) {
+              window.clearTimeout(edgeTimer);
+              edgeTimer = null;
+            }
+          }
 
           let elHeight = 48;
           if (childEl) {
@@ -1645,7 +1845,7 @@ export default {
               if (originalPos) {
                 const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + (finalX - baseX)));
                 const nextY = Math.max(0, Math.min(maxAllowedY, originalPos.y + (finalY - baseY)));
-                return { ...d, position: { x: Math.round(nextX), y: Math.round(nextY) } };
+                return { ...d, position: { ...d.position, x: Math.round(nextX), y: Math.round(nextY), page: this.getPositionPage(d.position) } };
               }
               return d;
             });
@@ -1689,6 +1889,11 @@ export default {
 
         // shared cleanup function to remove listeners, cancel RAF, and release capture
         this.dragCleanup = () => {
+          // Dọn dẹp bộ hẹn giờ sát mép khi kết thúc thao tác kéo
+          if (edgeTimer) {
+            window.clearTimeout(edgeTimer);
+            edgeTimer = null;
+          }
           try { window.removeEventListener('pointermove', onMove); } catch (e) { void e; }
           try { window.removeEventListener('pointerup', onUp); } catch (e) { void e; }
           try { window.removeEventListener('pointercancel', onUp); } catch (e) { void e; }
@@ -1834,6 +2039,65 @@ export default {
 
         return Math.max(0, bottomLimit - height - padding);
       },
+      getApproxElementSize(type = 'icon') {
+        if (type === 'widget') return { width: 240, height: 160 };
+        if (type === 'searchBar') return { width: 520, height: 72 };
+        return { width: 72, height: 84 };
+      },
+      getPageOccupancy(page) {
+        const entries = [];
+        const push = (pos, width, height, id) => {
+          if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return;
+          if (this.getPositionPage(pos) !== page) return;
+          entries.push({ id, x: pos.x, y: pos.y, width, height });
+        };
+
+        (this.desktopApps || []).forEach(app => {
+          const size = this.getApproxElementSize(app.displayMode === 'widget' ? 'widget' : 'icon');
+          push(app.position, size.width, size.height, app.appId);
+        });
+        (this.widgets || []).forEach(widget => {
+          const rect = this.widgetRects[widget.id];
+          const size = rect || this.getApproxElementSize('widget');
+          push(this.widgetPositions[widget.id], size.width, size.height, widget.id);
+        });
+        Object.entries(this.iconPositions || {}).forEach(([id, pos]) => {
+          const size = this.getApproxElementSize(id === 'searchBar' ? 'searchBar' : 'icon');
+          push(pos, pos.width || size.width, size.height, id);
+        });
+
+        return entries;
+      },
+      findFreePositionOnPage({ width = 72, height = 84, startPage = this.currentPage } = {}) {
+        const root = this.$refs.editOverlay || this.$refs.desktopMain;
+        if (!root) return { x: this.snapToGrid(40), y: this.snapToGrid(80), page: startPage };
+        const rect = root.getBoundingClientRect();
+        const step = this.gridSize;
+        const minX = this.getSideDockMinX(root);
+        const maxX = Math.max(minX, rect.width - width - step);
+
+        const overlaps = (a, b) => (
+          a.x < b.x + b.width + step
+          && a.x + a.width + step > b.x
+          && a.y < b.y + b.height + step
+          && a.y + a.height + step > b.y
+        );
+
+        for (let page = Math.max(0, startPage); page < startPage + 20; page += 1) {
+          const occupied = this.getPageOccupancy(page);
+          const maxY = this.getElementMaxY(root, height);
+          for (let y = this.snapToGrid(80); y <= maxY; y += step) {
+            for (let x = this.snapToGrid(minX + step); x <= maxX; x += step) {
+              const candidate = { x, y, width, height };
+              if (!occupied.some(entry => overlaps(entry, candidate))) {
+                return { x, y, page };
+              }
+            }
+          }
+        }
+
+        return { x: this.snapToGrid(minX + step), y: this.snapToGrid(80), page: startPage + 1 };
+      },
       getSideDockMinX(root) {
         const desktop = this.$refs.desktopMain;
         const dock = desktop && desktop.querySelector('[data-side-dock]');
@@ -1854,7 +2118,7 @@ export default {
           const next = {};
           Object.entries(positions || {}).forEach(([key, pos]) => {
             if (!pos || typeof pos.x !== 'number') return;
-            const normalized = { ...pos, x: this.snapToGrid(pos.x) };
+            const normalized = { ...pos, x: this.snapToGrid(pos.x), page: this.getPositionPage(pos) };
             if (typeof pos.y === 'number') normalized.y = this.snapToGrid(pos.y);
             if (typeof pos.bottom === 'number') normalized.bottom = this.snapToGrid(pos.bottom);
             next[key] = normalized;
@@ -1869,6 +2133,7 @@ export default {
           position: app.position ? {
             ...app.position,
             x: this.snapToGrid(app.position.x),
+            page: this.getPositionPage(app.position),
             ...(typeof app.position.y === 'number' ? { y: this.snapToGrid(app.position.y) } : {}),
           } : app.position,
         }));
@@ -1927,10 +2192,10 @@ export default {
         this.widgets.push(item);
         // place new label top-to-bottom: compute a y based on existing label count
         this.$nextTick(() => {
-          const labelCount = this.widgets.filter(w => w.type === 'label').length - 1; // zero-based index for new
-          const x = this.snapToGrid(24);
-          const y = this.snapToGrid(80 + labelCount * 48);
-          this.widgetPositions = { ...this.widgetPositions, [id]: { x, y } };
+          const size = this.getApproxElementSize('widget');
+          const pos = this.findFreePositionOnPage({ width: size.width, height: size.height, startPage: this.currentPage });
+          this.currentPage = pos.page;
+          this.widgetPositions = { ...this.widgetPositions, [id]: pos };
         });
       },
       getNextGroupName() {
@@ -1967,14 +2232,21 @@ export default {
         const overlay = this.$refs.editOverlay || this.$refs.desktopMain;
         let x = this.snapToGrid(40);
         let y = this.snapToGrid(80);
+        let page = this.currentPage;
         if (overlay && typeof clientX === 'number' && typeof clientY === 'number') {
           const rect = overlay.getBoundingClientRect();
           x = this.clampToGridRange(clientX - rect.left - 40, this.getSideDockMinX(overlay), rect.width - 200);
           y = this.clampToGrid(clientY - rect.top - 24, this.getElementMaxY(overlay, 120, { id }));
+        } else {
+          const pos = this.findFreePositionOnPage({ width: 240, height: 160, startPage: this.currentPage });
+          x = pos.x;
+          y = pos.y;
+          page = pos.page;
         }
 
         this.widgets.push(newWidget);
-        this.widgetPositions = { ...this.widgetPositions, [id]: { x, y } };
+        this.currentPage = page;
+        this.widgetPositions = { ...this.widgetPositions, [id]: { x, y, page } };
         this.selectedAppIds = new Set();
         this.saveLayout();
         this.$nextTick(() => {
@@ -2286,6 +2558,30 @@ export default {
             continue;
           }
           const nextPos = findNearestFreePosition(current, placed);
+          
+          // Kiểm tra xem vị trí mới tìm được có bị chồng lấn hay không
+          const isOverlapping = placed.some(item => overlaps(item, { ...current, x: nextPos.x, y: nextPos.y }));
+          
+          if (isOverlapping && current.type !== 'obstacle') {
+            // Không tìm thấy vị trí khả dụng trên trang này -> tự động đẩy phần tử sang trang kế tiếp
+            const size = { width: current.width, height: current.height };
+            const freePos = this.findFreePositionOnPage({ width: size.width, height: size.height, startPage: this.currentPage + 1 });
+            
+            // Cập nhật tọa độ và đặt trang mới cho phần tử
+            if (current.type === 'widget') {
+              nextWidgetPositions[current.id] = { ...nextWidgetPositions[current.id], x: freePos.x, y: freePos.y, page: freePos.page };
+            } else if (current.type === 'desktopApp') {
+              const idx = nextDesktopApps.findIndex((app) => app.appId === current.id);
+              if (idx !== -1) {
+                nextDesktopApps[idx].position = { ...nextDesktopApps[idx].position, x: freePos.x, y: freePos.y, page: freePos.page };
+              }
+            } else {
+              nextIconPositions[current.id] = { ...nextIconPositions[current.id], x: freePos.x, y: freePos.y, page: freePos.page };
+            }
+            changed = true;
+            continue; // Bỏ qua không đẩy vào placed của trang hiện tại
+          }
+
           if (nextPos.x !== current.x || nextPos.y !== current.y) {
             current.x = nextPos.x;
             current.y = nextPos.y;
