@@ -198,6 +198,7 @@
           <div
             v-for="tick in horizontalRulerTicks"
             :key="'x_' + tick"
+            v-memo="[tick]"
             class="absolute top-0 h-8 border-l border-white/25"
             :class="{ 'border-white/45': tick % 96 === 0 }"
             :style="{ left: `${tick}px` }"
@@ -209,6 +210,7 @@
           <div
             v-for="tick in verticalRulerTicks"
             :key="'y_' + tick"
+            v-memo="[tick]"
             class="absolute left-0 w-10 border-t border-white/25"
             :class="{ 'border-white/45': tick % 96 === 0 }"
             :style="{ top: `${tick}px` }"
@@ -1640,6 +1642,14 @@ export default {
         const baseX = basePos ? basePos.x : (childEl ? Math.round(childEl.getBoundingClientRect().left - overlayRect.left) : 0);
         const baseY = basePos ? basePos.y : (childEl ? Math.round(childEl.getBoundingClientRect().top - overlayRect.top) : 0);
 
+        // Cache lại chiều cao phần tử kéo một lần duy nhất để tránh Force Reflow (Layout Thrashing)
+        let elHeight = 48;
+        if (childEl) {
+          elHeight = childEl.getBoundingClientRect().height;
+        } else if (this.widgetRects[id]) {
+          elHeight = this.widgetRects[id].height;
+        }
+
         // pointer capture: prefer capturing on the element we will transform (childEl),
         // fall back to the original event.target if needed. Store so we can release later.
         let capturedEl = null;
@@ -1667,19 +1677,17 @@ export default {
         let lastClientX = startClientX, lastClientY = startClientY;
 
         const paint = () => {
-          if (isDesktopApp) {
-            this.desktopApps = (this.desktopApps || []).map(d => {
-              const originalPos = originalAppPositions[d.appId];
-              if (originalPos) {
-                const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + tx));
-                const nextY = Math.max(0, Math.min(this.getElementMaxY(overlay, 48), originalPos.y + ty));
-                return { ...d, position: { ...d.position, x: Math.round(nextX), y: Math.round(nextY), page: this.getPositionPage(d.position) } };
-              }
-              return d;
-            });
-          } else if (childEl) {
-            childEl.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
-          }
+          // GPU-Accelerated Dragging: Cập nhật CSS Transform 3D trực tiếp lên DOM để GPU tăng tốc phần cứng
+          // Tránh tuyệt đối việc gán/cập nhật Vue state (desktopApps/positions) liên tục gây reactivity re-render
+          const currentDragElements = appsToMove.map(aid => {
+            return overlay.querySelector(`[data-app-id="${aid}"]`) || overlay.querySelector(`[data-label="${aid}"]`) || overlay.querySelector(`[data-widget-id="${aid}"]`);
+          }).filter(Boolean);
+
+          currentDragElements.forEach(el => {
+            el.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
+            el.style.willChange = 'transform';
+            el.style.transition = 'transform 0s';
+          });
           rafId = null;
         };
 
@@ -1755,13 +1763,6 @@ export default {
             }
           }
 
-          let elHeight = 48;
-          if (childEl) {
-            elHeight = childEl.getBoundingClientRect().height;
-          } else if (this.widgetRects[id]) {
-            elHeight = this.widgetRects[id].height;
-          }
-
           const maxAllowedY = this.getElementMaxY(overlay, elHeight, { id });
 
           const nextX = Math.max(minX, Math.min(overlayRect.width - 48, baseX + cx - startClientX));
@@ -1781,13 +1782,6 @@ export default {
           // compute final position using lastClientX/lastClientY
           let finalX = baseX + (lastClientX - startClientX);
           let finalY = baseY + (lastClientY - startClientY);
-
-          let elHeight = 48;
-          if (childEl) {
-            elHeight = childEl.getBoundingClientRect().height;
-          } else if (this.widgetRects[id]) {
-            elHeight = this.widgetRects[id].height;
-          }
 
           const maxAllowedY = this.getElementMaxY(overlay, elHeight, { id });
 
@@ -1835,10 +1829,18 @@ export default {
           if (capturedEl && capturedPointerId && capturedEl.releasePointerCapture) {
             try { capturedEl.releasePointerCapture(capturedPointerId); } catch (e) { /* ignore */ }
           }
-          if (childEl) {
-            childEl.style.transform = 'translate3d(0px, 0px, 0)';
-            childEl.style.transition = 'none';
-          }
+          
+          // Khôi phục thuộc tính style ban đầu cho tất cả các phần tử đã kéo để Vue vẽ theo state mới
+          const currentDragElements = appsToMove.map(aid => {
+            return overlay.querySelector(`[data-app-id="${aid}"]`) || overlay.querySelector(`[data-label="${aid}"]`) || overlay.querySelector(`[data-widget-id="${aid}"]`);
+          }).filter(Boolean);
+
+          currentDragElements.forEach(el => {
+            el.style.transform = '';
+            el.style.transition = '';
+            el.style.willChange = '';
+          });
+
           if (isDesktopApp) {
             this.desktopApps = (this.desktopApps || []).map(d => {
               const originalPos = originalAppPositions[d.appId];
@@ -1855,11 +1857,6 @@ export default {
             this.iconPositions = { ...this.iconPositions, [id]: { ...this.iconPositions[id], x: Math.round(finalX), y: Math.round(finalY) } };
           }
           this.$nextTick(() => {
-            if (childEl) {
-              childEl.style.transform = '';
-              childEl.style.transition = '';
-              childEl.style.willChange = '';
-            }
             this.draggingElement = null;
             if (isDesktopApp) {
               appsToMove.forEach(appId => this.resolveAllElementOverlaps(appId));
