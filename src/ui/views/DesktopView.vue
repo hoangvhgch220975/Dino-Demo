@@ -438,14 +438,33 @@ import AppWidgetTile from '../components/AppWidgetTile.vue'
 import HelpDialog from '../components/HelpDialog.vue'
 
 import { appSections } from '../lib/apps-definitions'
-import { routeForApp } from '../lib/routes'
 import { appsRegistry, getAppByKey } from '../lib/apps-registry'
 import { getDockCenterForKey } from '../lib/geometry'
 
-const keyFromLabel = (label) => {
-  const k = routeForApp(label).replace('/', '')
-  return k
-}
+import {
+  keyFromLabel,
+  getPositionPage,
+  isPositionOnCurrentPage,
+  snapToGrid,
+  clampToGrid,
+  clampToGridRange,
+  getElementBottomPadding,
+  getElementMaxY,
+  getApproxElementSize,
+  getSideDockMinX
+} from './helpers/layout-helpers'
+import {
+  getPageOccupancy,
+  isPositionAvailableOnPage,
+  findFreePositionOnPage,
+  resolveAllElementOverlaps
+} from './helpers/collision-solver'
+import {
+  getCleanedIconPositions,
+  saveLayout,
+  loadLayout,
+  saveOpenWindows
+} from './helpers/persistence'
 
 export default {
   name: 'DesktopView',
@@ -878,29 +897,17 @@ export default {
   },
   methods: {
     getPositionPage(pos) {
-      const page = pos && Number.isInteger(pos.page) ? pos.page : 0;
-      return Math.max(0, page);
+      // Ủy quyền cho layout-helpers xử lý
+      return getPositionPage(pos);
     },
     isPositionOnCurrentPage(pos) {
-      return this.getPositionPage(pos) === this.currentPage;
+      // Ủy quyền cho layout-helpers xử lý
+      return isPositionOnCurrentPage(pos, this.currentPage);
     },
     // Kiểm tra xem vị trí cụ thể trên một trang có khả dụng hay không (không bị chồng lấn bởi phần tử khác)
-    isPositionAvailableOnPage({ x, y, width = 72, height = 84, page = this.currentPage, ignoreIds = [] } = {}) {
-      const occupied = this.getPageOccupancy(page);
-      const step = this.gridSize;
-      
-      // Định nghĩa hàm kiểm tra hai vùng chữ nhật có đè lên nhau không
-      const overlaps = (a, b) => (
-        a.x < b.x + b.width + step
-        && a.x + a.width + step > b.x
-        && a.y < b.y + b.height + step
-        && a.y + a.height + step > b.y
-      );
-      
-      const candidate = { x, y, width, height };
-      return !occupied
-        .filter(entry => !ignoreIds.includes(entry.id))
-        .some(entry => overlaps(entry, candidate));
+    isPositionAvailableOnPage(options) {
+      // Ủy quyền cho collision-solver xử lý
+      return isPositionAvailableOnPage(this, options);
     },
     setDesktopPage(page) {
       const nextPage = Math.max(0, Math.min(this.totalDesktopPages - 1, Number(page) || 0));
@@ -933,101 +940,10 @@ export default {
       this.saveLayout();
     },
     getCleanedIconPositions() {
-      return { ...this.iconPositions };
+      return getCleanedIconPositions(this);
     },
     loadLayout() {
-      /*
-        ========================================================================
-        TODO: CHỖ NÀY SẼ THAY BẰNG LOGIC BACKEND (TẢI CONFIG CÁ NHÂN HÓA TỪ DB)
-        ========================================================================
-        Thay vì chỉ đọc dữ liệu layout từ localStorage:
-        
-        1. Gọi API lấy cấu hình giao diện đã lưu của tài khoản đăng nhập hiện tại từ DB:
-           const response = await fetch('https://api.dinocloud.internal/v1/user/desktop-layout', {
-             headers: { 'Authorization': `Bearer ${token}` }
-           });
-           const parsed = await response.json();
-           
-        2. Gán các thông tin cấu hình này vào state để hiển thị giao diện cá nhân hóa của chính User đó:
-           - Vị trí icons (`parsed.iconPositions`)
-           - Vị trí widgets (`parsed.widgetPositions`)
-           - Danh sách Widgets nhóm (`parsed.widgets`)
-           - App hiển thị ngoài desktop (`parsed.desktopApps`)
-        ========================================================================
-      */
-      try {
-        const raw = localStorage.getItem('desktop_layout');
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        if (parsed.iconPositions) {
-          this.iconPositions = parsed.iconPositions;
-        }
-        if (parsed.widgetPositions) this.widgetPositions = parsed.widgetPositions;
-        if (parsed.widgets) {
-          // ensure compatibility: normalize old widget items -> appIds
-          this.widgets = parsed.widgets.map(w => {
-            const base = { collapsed: false, z: w.z || 0, ...w };
-            // if legacy items array of objects exists, convert to appIds
-            if (Array.isArray(base.items) && base.items.length && (base.items[0] && (base.items[0].label || base.items[0].key))) {
-              base.appIds = base.items.map(it => (it.key ? it.key : keyFromLabel(it.label || it)));
-              delete base.items;
-            }
-            // ensure appIds exists
-            if (!Array.isArray(base.appIds)) base.appIds = [];
-            return base;
-          });
-        }
-          if (parsed.desktopApps && Array.isArray(parsed.desktopApps)) {
-            this.desktopApps = parsed.desktopApps;
-          }
-          if (parsed.productIconUrls && typeof parsed.productIconUrls === 'object') {
-            this.productIconUrls = parsed.productIconUrls;
-          }
-          // sanitize: build set of appIds inside widgets
-          const inGroups = new Set();
-          this.widgets.forEach(w => { if (Array.isArray(w.appIds)) w.appIds.forEach(a => { if (a !== null && a !== undefined) inGroups.add(String(a)); }); });
-          // sanitize desktopApps (remove entries that are null, duplicates, or inside groups)
-          if (this.desktopApps && Array.isArray(this.desktopApps)) {
-            const seen = new Set();
-            this.desktopApps = this.desktopApps
-              .filter(d => d && d.appId && !inGroups.has(String(d.appId)))
-              .filter(d => {
-                const key = String(d.appId);
-                if (seen.has(key)) return false;
-                seen.add(key);
-                return true;
-              })
-              .map(d => ({
-                appId: String(d.appId),
-                position: this.getPagedPosition(d.position || { x: 40, y: 80 }, this.getPositionPage(d.position)),
-                displayMode: d.displayMode || 'icon'
-              }));
-          }
-          // dedupe and coerce widget appIds, remove falsy values
-          this.widgets.forEach(w => {
-            if (Array.isArray(w.appIds)) {
-              w.appIds = Array.from(new Set(w.appIds.map(a => (a === null || a === undefined) ? null : String(a)).filter(Boolean)));
-            } else {
-              w.appIds = [];
-            }
-          });
-          // convert legacy items arrays safely to appIds and merge
-          this.widgets.forEach(w => {
-            if (Array.isArray(w.items)) {
-              const converted = w.items.map(it => {
-                if (!it) return null;
-                if (typeof it === 'string') return keyFromLabel(it);
-                if (it.key) return String(it.key);
-                if (it.label) return keyFromLabel(it.label);
-                return null;
-              }).filter(Boolean);
-              w.appIds = Array.from(new Set([...(w.appIds || []), ...converted]));
-              delete w.items;
-            }
-          });
-      } catch (e) {
-        // ignore parse errors
-      }
+      loadLayout(this);
     },
     initDefaultLabels() {
       // Ensure two default labels exist: App and Product
@@ -2002,114 +1918,40 @@ export default {
         return style;
       },
       snapToGrid(value) {
-        if (!this.gridEnabled) return Math.round(value);
-        return Math.round(Number(value || 0) / this.gridSize) * this.gridSize;
+        // Ủy quyền cho layout-helpers xử lý
+        return snapToGrid(value, this.gridSize, this.gridEnabled);
       },
       clampToGrid(value, max) {
-        const snappedMax = Math.floor(Math.max(0, max) / this.gridSize) * this.gridSize;
-        return Math.max(0, Math.min(snappedMax, this.snapToGrid(value)));
+        // Ủy quyền cho layout-helpers xử lý
+        return clampToGrid(value, max, this.gridSize, this.gridEnabled);
       },
       clampToGridRange(value, min, max) {
-        const snappedMin = Math.ceil(Math.max(0, min) / this.gridSize) * this.gridSize;
-        const snappedMax = Math.floor(Math.max(snappedMin, max) / this.gridSize) * this.gridSize;
-        return Math.max(snappedMin, Math.min(snappedMax, this.snapToGrid(value)));
+        // Ủy quyền cho layout-helpers xử lý
+        return clampToGridRange(value, min, max, this.gridSize, this.gridEnabled);
       },
       getElementBottomPadding(id) {
-        const widgetRect = id ? this.widgetRects[id] : null;
-        return widgetRect && widgetRect.collapsed ? 96 : 72;
+        // Ủy quyền cho layout-helpers xử lý
+        return getElementBottomPadding(id, this.widgetRects);
       },
       getElementMaxY(root, elementHeight, options = {}) {
-        if (!root) return 0;
-        const rootRect = root.getBoundingClientRect();
-        const height = Math.max(0, Number(elementHeight || 48));
-        const padding = this.getElementBottomPadding(options.id);
-        let bottomLimit = rootRect.height;
-
-        const desktop = this.$refs.desktopMain;
-        const dock = (root.querySelector && root.querySelector('[data-side-dock]')) || (desktop && desktop.querySelector('[data-side-dock]'));
-        if (dock) {
-          const dockRect = dock.getBoundingClientRect();
-          const isBottomDock = dockRect.width > dockRect.height;
-          if (isBottomDock) {
-            bottomLimit = Math.max(0, Math.round(dockRect.top - rootRect.top));
-          }
-        }
-
-        return Math.max(0, bottomLimit - height - padding);
+        // Ủy quyền cho layout-helpers xử lý
+        return getElementMaxY(root, elementHeight, this.widgetRects, this.$refs.desktopMain, this.gridSize, options.id);
       },
       getApproxElementSize(type = 'icon') {
-        if (type === 'widget') return { width: 240, height: 160 };
-        if (type === 'searchBar') return { width: 520, height: 72 };
-        return { width: 72, height: 84 };
+        // Ủy quyền cho layout-helpers xử lý
+        return getApproxElementSize(type);
       },
       getPageOccupancy(page) {
-        const entries = [];
-        const push = (pos, width, height, id) => {
-          if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return;
-          if (this.getPositionPage(pos) !== page) return;
-          entries.push({ id, x: pos.x, y: pos.y, width, height });
-        };
-
-        (this.desktopApps || []).forEach(app => {
-          const size = this.getApproxElementSize(app.displayMode === 'widget' ? 'widget' : 'icon');
-          push(app.position, size.width, size.height, app.appId);
-        });
-        (this.widgets || []).forEach(widget => {
-          const rect = this.widgetRects[widget.id];
-          const size = rect || this.getApproxElementSize('widget');
-          push(this.widgetPositions[widget.id], size.width, size.height, widget.id);
-        });
-        Object.entries(this.iconPositions || {}).forEach(([id, pos]) => {
-          const size = this.getApproxElementSize(id === 'searchBar' ? 'searchBar' : 'icon');
-          push(pos, pos.width || size.width, size.height, id);
-        });
-
-        return entries;
+        // Ủy quyền cho collision-solver xử lý
+        return getPageOccupancy(this, page);
       },
-      findFreePositionOnPage({ width = 72, height = 84, startPage = this.currentPage } = {}) {
-        const root = this.$refs.editOverlay || this.$refs.desktopMain;
-        if (!root) return { x: this.snapToGrid(40), y: this.snapToGrid(80), page: startPage };
-        const rect = root.getBoundingClientRect();
-        const step = this.gridSize;
-        const minX = this.getSideDockMinX(root);
-        const maxX = Math.max(minX, rect.width - width - step);
-
-        const overlaps = (a, b) => (
-          a.x < b.x + b.width + step
-          && a.x + a.width + step > b.x
-          && a.y < b.y + b.height + step
-          && a.y + a.height + step > b.y
-        );
-
-        for (let page = Math.max(0, startPage); page < startPage + 20; page += 1) {
-          const occupied = this.getPageOccupancy(page);
-          const maxY = this.getElementMaxY(root, height);
-          for (let y = this.snapToGrid(80); y <= maxY; y += step) {
-            for (let x = this.snapToGrid(minX + step); x <= maxX; x += step) {
-              const candidate = { x, y, width, height };
-              if (!occupied.some(entry => overlaps(entry, candidate))) {
-                return { x, y, page };
-              }
-            }
-          }
-        }
-
-        return { x: this.snapToGrid(minX + step), y: this.snapToGrid(80), page: startPage + 1 };
+      findFreePositionOnPage(options) {
+        // Ủy quyền cho collision-solver xử lý
+        return findFreePositionOnPage(this, options);
       },
       getSideDockMinX(root) {
-        const desktop = this.$refs.desktopMain;
-        const dock = desktop && desktop.querySelector('[data-side-dock]');
-
-        if (!root || !dock) {
-          return window.innerWidth >= 1024 ? 96 : 0;
-        }
-
-        const rootRect = root.getBoundingClientRect();
-        const dockRect = dock.getBoundingClientRect();
-        const isSideDock = dockRect.height >= dockRect.width;
-        if (!isSideDock) return 0;
-
-        return this.snapToGrid(dockRect.right - rootRect.left + this.gridSize);
+        // Ủy quyền cho layout-helpers xử lý
+        return getSideDockMinX(root, this.$refs.desktopMain, this.gridSize, this.gridEnabled);
       },
       normalizeLayoutPositions() {
         const normalizeMap = (positions) => {
@@ -2267,18 +2109,8 @@ export default {
           });
           ========================================================================
         */
-        try {
-          const payload = {
-            iconPositions: this.getCleanedIconPositions(),
-            widgetPositions: this.widgetPositions,
-          widgets: this.widgets,
-          desktopApps: this.desktopApps,
-          productIconUrls: this.productIconUrls,
-        };
-        localStorage.setItem('desktop_layout', JSON.stringify(payload));
-        } catch (e) {
-          // ignore
-        }
+        // Ủy quyền cho persistence helper xử lý lưu cục bộ
+        saveLayout(this);
       },
       saveOpenWindows() {
         /*
@@ -2295,18 +2127,8 @@ export default {
           });
           ========================================================================
         */
-        try {
-          const list = this.openWindows.map(w => ({
-            key: w.key,
-            rect: w.rect,
-            z: w.z,
-            minimized: w.minimized,
-            maximized: w.maximized,
-          }));
-          localStorage.setItem('desktop_open_windows', JSON.stringify(list));
-        } catch (e) {
-          // ignore
-        }
+        // Ủy quyền cho persistence helper xử lý lưu cục bộ
+        saveOpenWindows(this);
       },
       onWidgetMeasure({ id, width, height, collapsed }) {
         this.widgetRects = {
@@ -2406,213 +2228,7 @@ export default {
         this.resolveAllElementOverlaps(changedId);
       },
       resolveAllElementOverlaps(changedId) {
-        if (this.draggingElement) return;
-        const root = this.isEditMode ? this.$refs.editOverlay : this.$refs.desktopMain;
-        if (!root) return;
-
-
-        const seenApps = new Set();
-        const deduplicatedDesktopApps = (this.desktopApps || []).filter(d => {
-          if (!d || !d.appId) return false;
-          if (seenApps.has(d.appId)) return false;
-          seenApps.add(d.appId);
-          return true;
-        });
-        const desktopAppIds = new Set(deduplicatedDesktopApps.map((app) => app.appId));
-        const entries = [];
-        const rootRect = root.getBoundingClientRect();
-
-        const pushEntry = ({ id, type, pos, width, height, priority }) => {
-          if (!id || !pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return;
-          entries.push({
-            id,
-            type,
-            x: pos.x,
-            y: pos.y,
-            width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(width || this.gridSize))),
-            height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(height || this.gridSize))),
-            priority,
-          });
-        };
-
-        const obstacleRoot = this.$refs.desktopMain || root;
-        const isDesktop = window.innerWidth >= 1024;
-        if (isDesktop) {
-          entries.push({
-            id: 'sideDock_virtual_obstacle',
-            type: 'obstacle',
-            x: 0,
-            y: 0,
-            width: this.getSideDockMinX(root),
-            height: this.snapToGrid(rootRect.height),
-            priority: 0,
-          });
-        } else {
-          obstacleRoot.querySelectorAll('[data-side-dock]').forEach((el, index) => {
-            const rect = el.getBoundingClientRect();
-            const dockPadding = this.gridSize * 4;
-            entries.push({
-              id: `sideDock_${index}`,
-              type: 'obstacle',
-              x: this.snapToGrid(rect.left - rootRect.left - dockPadding),
-              y: this.snapToGrid(rect.top - rootRect.top - dockPadding),
-              width: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.width + dockPadding * 2))),
-              height: Math.max(this.gridSize, this.snapToGrid(Math.ceil(rect.height + dockPadding * 2))),
-              priority: 0,
-            });
-          });
-        }
-
-        root.querySelectorAll('[data-widget-id]').forEach((el) => {
-          const id = el.getAttribute('data-widget-id');
-          const pos = this.widgetPositions[id];
-          const rect = el.getBoundingClientRect();
-          pushEntry({ id, type: 'widget', pos, width: rect.width, height: rect.height, priority: 10 });
-        });
-
-        root.querySelectorAll('[data-label]').forEach((el) => {
-          const id = el.getAttribute('data-label');
-          if (id === 'statusPanel') return;
-          const rect = el.getBoundingClientRect();
-          const appId = keyFromLabel(id);
-          if (desktopAppIds.has(appId)) {
-            const app = deduplicatedDesktopApps.find((item) => item.appId === appId);
-            pushEntry({ id: appId, type: 'desktopApp', pos: app && app.position, width: rect.width, height: rect.height, priority: 30 });
-            return;
-          }
-          if (this.iconPositions[id]) {
-            pushEntry({ id, type: 'icon', pos: this.iconPositions[id], width: rect.width, height: rect.height, priority: 20 });
-          }
-        });
-
-        entries.sort((a, b) => (a.y - b.y) || (a.x - b.x) || (a.priority - b.priority));
-
-        const nextWidgetPositions = { ...this.widgetPositions };
-        const nextIconPositions = { ...this.iconPositions };
-        const nextDesktopApps = deduplicatedDesktopApps.map((app) => ({ ...app, position: app.position ? { ...app.position } : app.position }));
-        let changed = false;
-
-        const overlaps = (a, b) => {
-          const isObstacle = a.type === 'obstacle' || b.type === 'obstacle';
-          const isStatusElement = (id) => ['status_greeting', 'status_clock', 'status_date', 'status_weather'].includes(id);
-          const hasStatus = isStatusElement(a.id) || isStatusElement(b.id);
-
-          const padding = (isObstacle || hasStatus) ? 0 : this.gridSize;
-          return a.x < b.x + b.width + padding
-            && a.x + a.width + padding > b.x
-            && a.y < b.y + b.height + padding
-            && a.y + a.height + padding > b.y;
-        };
-
-        const findNearestFreePosition = (entry, placed) => {
-          const maxX = Math.floor(Math.max(0, rootRect.width - entry.width) / this.gridSize) * this.gridSize;
-          const maxY = Math.floor(this.getElementMaxY(root, entry.height, { id: entry.id }) / this.gridSize) * this.gridSize;
-          const originX = this.clampToGrid(entry.x, maxX);
-          const originY = this.clampToGrid(entry.y, maxY);
-
-          const candidateWorks = (x, y) => {
-            const candidate = { ...entry, x, y };
-            return !placed.some((item) => overlaps(item, candidate));
-          };
-
-          if (candidateWorks(originX, originY)) return { x: originX, y: originY };
-
-          const maxRadius = Math.ceil(Math.max(rootRect.width, rootRect.height) / this.gridSize);
-          for (let radius = 1; radius <= maxRadius; radius += 1) {
-            const candidates = [];
-            for (let dx = -radius; dx <= radius; dx += 1) {
-              candidates.push({ x: originX + dx * this.gridSize, y: originY - radius * this.gridSize });
-              candidates.push({ x: originX + dx * this.gridSize, y: originY + radius * this.gridSize });
-            }
-            for (let dy = -radius + 1; dy <= radius - 1; dy += 1) {
-              candidates.push({ x: originX - radius * this.gridSize, y: originY + dy * this.gridSize });
-              candidates.push({ x: originX + radius * this.gridSize, y: originY + dy * this.gridSize });
-            }
-
-            candidates.sort((a, b) => {
-              const da = Math.abs(a.x - originX) + Math.abs(a.y - originY);
-              const db = Math.abs(b.x - originX) + Math.abs(b.y - originY);
-              return da - db || a.y - b.y || a.x - b.x;
-            });
-
-            const found = candidates.find((candidate) => (
-              candidate.x >= 0
-              && candidate.y >= 0
-              && candidate.x <= maxX
-              && candidate.y <= maxY
-              && candidateWorks(candidate.x, candidate.y)
-            ));
-            if (found) return found;
-          }
-
-          return { x: originX, y: originY };
-        };
-
-        const placed = [];
-        for (let i = 0; i < entries.length; i += 1) {
-          const current = entries[i];
-          if (current.type === 'obstacle') {
-            placed.push(current);
-            continue;
-          }
-          const nextPos = findNearestFreePosition(current, placed);
-          
-          // Kiểm tra xem vị trí mới tìm được có bị chồng lấn hay không
-          const isOverlapping = placed.some(item => overlaps(item, { ...current, x: nextPos.x, y: nextPos.y }));
-          
-          if (isOverlapping && current.type !== 'obstacle') {
-            // Không tìm thấy vị trí khả dụng trên trang này -> tự động đẩy phần tử sang trang kế tiếp
-            const size = { width: current.width, height: current.height };
-            const freePos = this.findFreePositionOnPage({ width: size.width, height: size.height, startPage: this.currentPage + 1 });
-            
-            // Cập nhật tọa độ và đặt trang mới cho phần tử
-            if (current.type === 'widget') {
-              nextWidgetPositions[current.id] = { ...nextWidgetPositions[current.id], x: freePos.x, y: freePos.y, page: freePos.page };
-            } else if (current.type === 'desktopApp') {
-              const idx = nextDesktopApps.findIndex((app) => app.appId === current.id);
-              if (idx !== -1) {
-                nextDesktopApps[idx].position = { ...nextDesktopApps[idx].position, x: freePos.x, y: freePos.y, page: freePos.page };
-              }
-            } else {
-              nextIconPositions[current.id] = { ...nextIconPositions[current.id], x: freePos.x, y: freePos.y, page: freePos.page };
-            }
-            changed = true;
-            continue; // Bỏ qua không đẩy vào placed của trang hiện tại
-          }
-
-          if (nextPos.x !== current.x || nextPos.y !== current.y) {
-            current.x = nextPos.x;
-            current.y = nextPos.y;
-            if (current.type === 'widget') {
-              nextWidgetPositions[current.id] = { ...nextWidgetPositions[current.id], x: nextPos.x, y: nextPos.y };
-            } else if (current.type === 'desktopApp') {
-              const idx = nextDesktopApps.findIndex((app) => app.appId === current.id);
-              if (idx !== -1) {
-                nextDesktopApps[idx].position = { ...nextDesktopApps[idx].position, x: nextPos.x, y: nextPos.y };
-              }
-            } else {
-              nextIconPositions[current.id] = { ...nextIconPositions[current.id], x: nextPos.x, y: nextPos.y };
-            }
-            changed = true;
-          }
-          placed.push(current);
-        }
-
-        if (changed) {
-          this.widgetPositions = nextWidgetPositions;
-          this.iconPositions = nextIconPositions;
-          const seen = new Set();
-          this.desktopApps = nextDesktopApps.filter(d => {
-            if (!d || !d.appId) return false;
-            if (seen.has(d.appId)) return false;
-            seen.add(d.appId);
-            return true;
-          });
-          this.saveLayout();
-          if (changedId) {
-            window.setTimeout(() => this.resolveAllElementOverlaps(), 80);
-          }
-        }
+        resolveAllElementOverlaps(this, changedId);
       },
       removeWidget(id) {
             // When removing a group/widget, delete its apps completely from desktop and active state
