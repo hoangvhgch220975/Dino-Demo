@@ -135,8 +135,8 @@
         @click="onEditOverlayClick"
         @pointerdown="handleBackgroundPointerDown"
       >
-        <div v-if="showGrid" class="absolute inset-0 pointer-events-none" :style="gridStyle"></div>
-        <div v-if="showGrid" class="absolute left-0 right-0 top-0 h-8 pointer-events-none z-40 border-b border-white/15 bg-black/20 backdrop-blur-[2px]">
+        <div v-if="devMode && showGrid" class="absolute inset-0 pointer-events-none" :style="gridStyle"></div>
+        <div v-if="devMode && showGrid" class="absolute left-0 right-0 top-0 h-8 pointer-events-none z-40 border-b border-white/15 bg-black/20 backdrop-blur-[2px]">
           <div
             v-for="tick in horizontalRulerTicks"
             :key="'x_' + tick"
@@ -147,7 +147,7 @@
             <span v-if="tick % 96 === 0" class="absolute left-1 top-1 text-[10px] font-semibold text-white/65 leading-none">{{ tick }}</span>
           </div>
         </div>
-        <div v-if="showGrid" class="absolute bottom-0 left-0 top-0 w-10 pointer-events-none z-40 border-r border-white/15 bg-black/20 backdrop-blur-[2px]">
+        <div v-if="devMode && showGrid" class="absolute bottom-0 left-0 top-0 w-10 pointer-events-none z-40 border-r border-white/15 bg-black/20 backdrop-blur-[2px]">
           <div
             v-for="tick in verticalRulerTicks"
             :key="'y_' + tick"
@@ -229,12 +229,11 @@
             :fallback-letter="d.isProduct ? firstLetter(d.label) : ''"
             :allow-icon-upload="d.isProduct"
             :is-edit-mode="true"
-            :draggable="true"
+            :draggable="false"
             :position="d.position"
             :owner="ownerMap[d.appId]"
             :is-selected="selectedAppIds.has(d.appId)"
-            @dragstart="handleDesktopDragStart"
-            @dragend="handleDesktopDragEnd"
+            @pointerdown="startPointerDrag(d.appId, $event)"
             @remove="label => removeAppFromSection({ label })"
             @enable-edit="isEditMode = true"
             @icon-upload="handleProductIconUpload"
@@ -425,9 +424,10 @@ export default {
       // Free-placement positions for icons when in edit mode: { [label]: { x, y } }
       iconPositions: {},
       // grid settings
-      gridEnabled: true,
+      devMode: true,
+      gridEnabled: false,
       gridSize: 24,
-      showGrid: false,
+      showGrid: true,
       widgets: [],
       widgetPositions: {},
       widgetRects: {},
@@ -1458,9 +1458,25 @@ export default {
         const overlayRect = overlay.getBoundingClientRect();
         const minX = this.getSideDockMinX(overlay);
         const desktopApp = (this.desktopApps || []).find(d => d.appId === id);
+        const isDesktopApp = !!desktopApp;
+        const appsToMove = isDesktopApp && this.selectedAppIds && this.selectedAppIds.has(id)
+          ? Array.from(this.selectedAppIds)
+          : [id];
+        const originalAppPositions = {};
+        if (isDesktopApp) {
+          (this.desktopApps || []).forEach(d => {
+            if (appsToMove.includes(d.appId) && d.position) {
+              originalAppPositions[d.appId] = { ...d.position };
+            }
+          });
+          try {
+            window.__dino_drag_payload = { label: id };
+            window.__dino_drag_selected_apps = appsToMove.length > 1 ? [...appsToMove] : null;
+          } catch (e) { void e; }
+        }
         const basePos = (desktopApp ? desktopApp.position : null) || this.iconPositions[id] || this.widgetPositions[id] || null;
         // find child element to apply transform for smooth dragging
-        let childEl = overlay.querySelector(`[data-label="${id}"]`) || overlay.querySelector(`[data-widget-id="${id}"]`);
+        let childEl = overlay.querySelector(`[data-app-id="${id}"]`) || overlay.querySelector(`[data-label="${id}"]`) || overlay.querySelector(`[data-widget-id="${id}"]`);
         const startClientX = event.clientX || (event.touches && event.touches[0].clientX);
         const startClientY = event.clientY || (event.touches && event.touches[0].clientY);
         const baseX = basePos ? basePos.x : (childEl ? Math.round(childEl.getBoundingClientRect().left - overlayRect.left) : 0);
@@ -1483,7 +1499,7 @@ export default {
             this.dragCleanup = null;
           }
 
-        if (childEl) {
+        if (childEl && !isDesktopApp) {
           childEl.style.willChange = 'transform';
           childEl.style.transition = 'transform 0s';
         }
@@ -1493,7 +1509,17 @@ export default {
         let lastClientX = startClientX, lastClientY = startClientY;
 
         const paint = () => {
-          if (childEl) {
+          if (isDesktopApp) {
+            this.desktopApps = (this.desktopApps || []).map(d => {
+              const originalPos = originalAppPositions[d.appId];
+              if (originalPos) {
+                const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + tx));
+                const nextY = Math.max(0, Math.min(overlayRect.height - 48, originalPos.y + ty));
+                return { ...d, position: { x: Math.round(nextX), y: Math.round(nextY) } };
+              }
+              return d;
+            });
+          } else if (childEl) {
             childEl.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
           }
           rafId = null;
@@ -1569,6 +1595,23 @@ export default {
           }
           if (maxAllowedY < 0) maxAllowedY = 0;
 
+          const targetWidget = isDesktopApp && typeof document !== 'undefined'
+            ? (document.elementsFromPoint(lastClientX, lastClientY)
+                .map(el => el.closest ? el.closest('[data-widget-id]') : null)
+                .find(Boolean) || null)
+            : null;
+          if (targetWidget) {
+            this.handleWidgetDrop({ id: targetWidget.getAttribute('data-widget-id'), appId: id });
+            this.draggingElement = null;
+            this.dragStartPositions = {};
+            if (isDesktopApp) {
+              try {
+                window.__dino_drag_payload = null;
+              } catch (e) { void e; }
+            }
+            return;
+          }
+
           if (this.gridEnabled) {
             finalX = this.clampToGridRange(finalX, minX, overlayRect.width - 48);
             finalY = this.clampToGridRange(finalY, 0, maxAllowedY);
@@ -1583,11 +1626,13 @@ export default {
             childEl.style.transform = 'translate3d(0px, 0px, 0)';
             childEl.style.transition = 'none';
           }
-          const isDesktopApp = (this.desktopApps || []).some(d => d.appId === id);
           if (isDesktopApp) {
             this.desktopApps = (this.desktopApps || []).map(d => {
-              if (d.appId === id) {
-                return { ...d, position: { x: Math.round(finalX), y: Math.round(finalY) } };
+              const originalPos = originalAppPositions[d.appId];
+              if (originalPos) {
+                const nextX = Math.max(minX, Math.min(overlayRect.width - 48, originalPos.x + (finalX - baseX)));
+                const nextY = Math.max(0, Math.min(maxAllowedY, originalPos.y + (finalY - baseY)));
+                return { ...d, position: { x: Math.round(nextX), y: Math.round(nextY) } };
               }
               return d;
             });
@@ -1603,7 +1648,11 @@ export default {
               childEl.style.willChange = '';
             }
             this.draggingElement = null;
-            this.resolveAllElementOverlaps(id);
+            if (isDesktopApp) {
+              appsToMove.forEach(appId => this.resolveAllElementOverlaps(appId));
+            } else {
+              this.resolveAllElementOverlaps(id);
+            }
           });
           // persist immediately to localStorage to guarantee save across session
           try {
@@ -1617,6 +1666,12 @@ export default {
             localStorage.setItem('desktop_layout', JSON.stringify(payload));
           } catch (e) { void e; }
           this.saveLayout();
+          if (isDesktopApp) {
+            try {
+              window.__dino_drag_payload = null;
+              window.__dino_drag_selected_apps = null;
+            } catch (e) { void e; }
+          }
         };
 
         // shared cleanup function to remove listeners, cancel RAF, and release capture

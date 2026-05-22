@@ -4,6 +4,7 @@
     :class="{ 'jiggle cursor-move': isEditMode, 'cursor-grab active:cursor-grabbing': !isEditMode }"
     :draggable="draggable"
     :data-label="label"
+    :data-app-id="appId || label"
     :style="positionStyle"
     @mousedown="startLongPress"
     @mouseup="cancelLongPress"
@@ -11,6 +12,7 @@
     @mouseenter="hovered = true"
     @touchstart="startLongPress"
     @touchend="cancelLongPress"
+    @pointerdown.stop="onPointerDown"
     @dragstart="onDragStart"
     @click="handleClick"
   >
@@ -18,6 +20,7 @@
     <div
       v-if="isEditMode && hovered"
       class="delete-btn"
+      @pointerdown.stop
       @click.stop="$emit('remove', label)"
     >
       <span class="material-symbols-outlined">close</span>
@@ -27,6 +30,7 @@
     <div
       v-if="isEditMode && hovered && isEligibleForWidget && !owner"
       class="widget-toggle-btn"
+      @pointerdown.stop
       title="Đổi thành Widget"
       @click.stop="$emit('toggle-mode', appId || label)"
     >
@@ -43,6 +47,7 @@
     <button
       v-if="allowIconUpload && isEditMode && hovered"
       class="upload-btn"
+      @pointerdown.stop
       title="Upload logo"
       @click.stop="triggerIconUpload"
     >
@@ -77,7 +82,7 @@ export default {
     fallbackLetter: { type: String, default: '' },
     allowIconUpload: { type: Boolean, default: false },
   },
-  emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload', 'toggle-mode'],
+  emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload', 'toggle-mode', 'pointerdown'],
   data() {
     return {
       longPressTimer: null,
@@ -115,6 +120,11 @@ export default {
         // ignore
       }
       this.$emit('dragstart', event);
+    },
+    onPointerDown(event) {
+      if (!this.isEditMode) return;
+      this.cancelLongPress();
+      this.$emit('pointerdown', event);
     },
     triggerIconUpload() {
       if (this.$refs.iconInput) this.$refs.iconInput.click();
