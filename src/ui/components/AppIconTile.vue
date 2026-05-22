@@ -1,7 +1,7 @@
 <template>
   <div
     class="relative flex flex-col items-center gap-1 group select-none focus:outline-none w-[60px]"
-    :class="{ 'jiggle cursor-move': isEditMode, 'cursor-grab active:cursor-grabbing': !isEditMode }"
+    :class="{ 'jiggle cursor-move': isEditMode && !isDragging, 'cursor-grab active:cursor-grabbing': !isEditMode, 'scale-[1.02] shadow-2xl z-50': isDragging }"
     :draggable="draggable"
     :data-label="label"
     :data-app-id="appId || label"
@@ -81,6 +81,7 @@ export default {
     iconImage: { type: String, default: '' },
     fallbackLetter: { type: String, default: '' },
     allowIconUpload: { type: Boolean, default: false },
+    isDragging: { type: Boolean, default: false },
   },
   emits: ['open', 'remove', 'enable-edit', 'dragstart', 'icon-upload', 'toggle-mode', 'pointerdown'],
   data() {
